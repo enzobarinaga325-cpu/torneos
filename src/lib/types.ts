@@ -1,5 +1,10 @@
 export type TournamentStatus = "armando" | "en_curso" | "finalizado";
 
+export type SiteSettings = {
+  id: number;
+  background_url: string | null;
+};
+
 export type Tournament = {
   id: string;
   name: string;

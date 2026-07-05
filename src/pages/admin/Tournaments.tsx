@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Eye, EyeOff, Trash2 } from "lucide-react";
+import { Plus, Eye, EyeOff, Trash2, Image as ImageIcon } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { Tournament } from "@/lib/types";
+import type { SiteSettings, Tournament } from "@/lib/types";
 import { formatDateRange } from "@/lib/format";
+import { uploadSiteImage } from "@/lib/images";
 import { Button, Card, Input, Label, Badge } from "@/components/ui";
 
 function slugify(name: string): string {
@@ -33,17 +34,41 @@ export function Tournaments() {
   const [error, setError] = useState<string | null>(null);
   const [editingDatesFor, setEditingDatesFor] = useState<string | null>(null);
   const [dateDraft, setDateDraft] = useState({ start: "", end: "" });
+  const [settings, setSettings] = useState<SiteSettings>({ id: 1, background_url: null });
+  const [uploadingBg, setUploadingBg] = useState(false);
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase.from("tournaments").select("*").order("created_at", { ascending: false });
+    const [{ data }, { data: s }] = await Promise.all([
+      supabase.from("tournaments").select("*").order("created_at", { ascending: false }),
+      supabase.from("site_settings").select("*").eq("id", 1).maybeSingle(),
+    ]);
     setTournaments(data ?? []);
+    if (s) setSettings(s);
     setLoading(false);
   }
 
   useEffect(() => {
     load();
   }, []);
+
+  async function uploadBackground(file: File) {
+    setUploadingBg(true);
+    setError(null);
+    try {
+      const url = await uploadSiteImage(file);
+      await supabase.from("site_settings").upsert({ id: 1, background_url: url });
+      setSettings((s) => ({ ...s, background_url: url }));
+    } catch (e) {
+      setError("No se pudo subir el fondo: " + (e instanceof Error ? e.message : String(e)));
+    }
+    setUploadingBg(false);
+  }
+
+  async function removeBackground() {
+    await supabase.from("site_settings").upsert({ id: 1, background_url: null });
+    setSettings((s) => ({ ...s, background_url: null }));
+  }
 
   async function createTournament(e: React.FormEvent) {
     e.preventDefault();
@@ -99,6 +124,37 @@ export function Tournaments() {
         <h1 className="text-lg font-semibold">Torneos</h1>
         <p className="text-sm text-zinc-500">Creá un torneo, armalo en privado y publicalo cuando esté listo.</p>
       </div>
+
+      <Card>
+        <h2 className="mb-1 text-sm font-semibold">Apariencia del sitio</h2>
+        <p className="mb-3 text-xs text-zinc-500">Fondo que ven tus clientes en la home y en la página de cada torneo publicado.</p>
+        <div className="flex items-center gap-4">
+          {settings.background_url ? (
+            <img src={settings.background_url} alt="Fondo del sitio" className="h-16 w-28 rounded-lg border border-zinc-200 object-cover" />
+          ) : (
+            <div className="flex h-16 w-28 items-center justify-center rounded-lg border border-dashed border-zinc-300 text-zinc-400">
+              <ImageIcon className="h-5 w-5" />
+            </div>
+          )}
+          <div className="flex flex-col gap-1">
+            <label className="cursor-pointer text-sm text-emerald-700 underline">
+              {uploadingBg ? "Subiendo…" : settings.background_url ? "Cambiar fondo" : "Subir fondo"}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={uploadingBg}
+                onChange={(e) => e.target.files?.[0] && uploadBackground(e.target.files[0])}
+              />
+            </label>
+            {settings.background_url && (
+              <button onClick={removeBackground} className="text-left text-sm text-zinc-500 underline">
+                Quitar fondo
+              </button>
+            )}
+          </div>
+        </div>
+      </Card>
 
       <Card>
         <h2 className="mb-3 text-sm font-semibold">Nuevo torneo</h2>

@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Tournament, Zone } from "@/lib/types";
 import { computeStandings, matchWinner } from "@/lib/tournament-logic";
 import { formatDateRange } from "@/lib/format";
+import { useSiteBackground } from "@/lib/useSiteBackground";
 import { Spinner } from "@/components/ui";
 
 function formatSchedule(iso: string | null): string | null {
@@ -22,6 +23,7 @@ export function TournamentDetail() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [courts, setCourts] = useState<Court[]>([]);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const backgroundStyle = useSiteBackground();
 
   useEffect(() => {
     if (!slug) return;
@@ -79,6 +81,7 @@ export function TournamentDetail() {
   }
 
   return (
+    <div className="min-h-screen" style={backgroundStyle}>
     <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-5 px-4 py-8">
       <div>
         <Link to="/" className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-900">
@@ -176,6 +179,7 @@ export function TournamentDetail() {
           )}
         </>
       )}
+    </div>
     </div>
   );
 }
