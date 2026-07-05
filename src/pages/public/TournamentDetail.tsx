@@ -4,6 +4,7 @@ import { ArrowLeft, MapPin, Trophy, Clock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Tournament, Zone } from "@/lib/types";
 import { computeStandings } from "@/lib/tournament-logic";
+import { formatDateRange } from "@/lib/format";
 import { Spinner } from "@/components/ui";
 
 function formatSchedule(iso: string | null): string | null {
@@ -84,7 +85,7 @@ export function TournamentDetail() {
           <ArrowLeft className="h-3.5 w-3.5" /> Torneos
         </Link>
         <h1 className="mt-1 text-2xl font-semibold">{tournament.name}</h1>
-        {tournament.start_date && <p className="text-sm text-zinc-500">{tournament.start_date}</p>}
+        {tournament.start_date && <p className="text-sm text-zinc-500">{formatDateRange(tournament.start_date, tournament.end_date)}</p>}
       </div>
 
       {categories.length === 0 ? (

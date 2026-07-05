@@ -5,6 +5,7 @@ export type Tournament = {
   name: string;
   slug: string;
   start_date: string | null;
+  end_date: string | null;
   status: TournamentStatus;
   published: boolean;
   created_at: string;

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Calendar, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Tournament } from "@/lib/types";
+import { formatDateRange } from "@/lib/format";
 import { Spinner } from "@/components/ui";
 
 export function Home() {
@@ -40,7 +41,7 @@ export function Home() {
               <h2 className="font-semibold">{t.name}</h2>
               {t.start_date && (
                 <p className="mt-1 flex items-center gap-1 text-xs text-zinc-500">
-                  <Calendar className="h-3.5 w-3.5" /> {t.start_date}
+                  <Calendar className="h-3.5 w-3.5" /> {formatDateRange(t.start_date, t.end_date)}
                 </p>
               )}
             </Link>

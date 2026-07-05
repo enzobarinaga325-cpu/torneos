@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Plus, Eye, EyeOff, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Tournament } from "@/lib/types";
+import { formatDateRange } from "@/lib/format";
 import { Button, Card, Input, Label, Badge } from "@/components/ui";
 
 function slugify(name: string): string {
@@ -27,8 +28,11 @@ export function Tournaments() {
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingDatesFor, setEditingDatesFor] = useState<string | null>(null);
+  const [dateDraft, setDateDraft] = useState({ start: "", end: "" });
 
   async function load() {
     setLoading(true);
@@ -50,7 +54,9 @@ export function Tournaments() {
     // Evita choques de slug sin necesitar que el usuario piense en URLs.
     const existing = new Set(tournaments.map((t) => t.slug));
     if (existing.has(slug)) slug = `${slug}-${Date.now().toString(36)}`;
-    const { error } = await supabase.from("tournaments").insert({ name: name.trim(), slug, start_date: startDate || null });
+    const { error } = await supabase
+      .from("tournaments")
+      .insert({ name: name.trim(), slug, start_date: startDate || null, end_date: endDate || startDate || null });
     setCreating(false);
     if (error) {
       setError(error.message);
@@ -58,6 +64,21 @@ export function Tournaments() {
     }
     setName("");
     setStartDate("");
+    setEndDate("");
+    load();
+  }
+
+  function openDateEditor(t: Tournament) {
+    setEditingDatesFor(t.id);
+    setDateDraft({ start: t.start_date ?? "", end: t.end_date ?? "" });
+  }
+
+  async function saveDates(t: Tournament) {
+    await supabase
+      .from("tournaments")
+      .update({ start_date: dateDraft.start || null, end_date: dateDraft.end || dateDraft.start || null })
+      .eq("id", t.id);
+    setEditingDatesFor(null);
     load();
   }
 
@@ -86,9 +107,13 @@ export function Tournaments() {
             <Label>Nombre</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Apertura 2026" required />
           </div>
-          <div className="w-48">
+          <div className="w-44">
             <Label>Fecha de inicio</Label>
             <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          </div>
+          <div className="w-44">
+            <Label>Fecha de fin (opcional)</Label>
+            <Input type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} />
           </div>
           <Button type="submit" disabled={creating}>
             <Plus className="h-3.5 w-3.5" /> Crear
@@ -113,7 +138,22 @@ export function Tournaments() {
                   <Badge color={statusLabels[t.status].color}>{statusLabels[t.status].label}</Badge>
                   <Badge color={t.published ? "green" : "zinc"}>{t.published ? "Publicado" : "Privado"}</Badge>
                 </div>
-                {t.start_date && <p className="text-xs text-zinc-500">{t.start_date}</p>}
+                {editingDatesFor === t.id ? (
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <Input type="date" value={dateDraft.start} onChange={(e) => setDateDraft((d) => ({ ...d, start: e.target.value }))} className="w-36 py-1 text-xs" />
+                    <span className="text-xs text-zinc-400">al</span>
+                    <Input type="date" value={dateDraft.end} min={dateDraft.start || undefined} onChange={(e) => setDateDraft((d) => ({ ...d, end: e.target.value }))} className="w-36 py-1 text-xs" />
+                    <Button className="px-2 py-1 text-xs" onClick={() => saveDates(t)}>Guardar</Button>
+                    <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => setEditingDatesFor(null)}>Cancelar</Button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-zinc-500">
+                    {t.start_date ? formatDateRange(t.start_date, t.end_date) : "Sin fecha"}{" "}
+                    <button onClick={() => openDateEditor(t)} className="underline">
+                      editar fechas
+                    </button>
+                  </p>
+                )}
               </div>
               <Link to={`/admin/torneos/${t.id}`}>
                 <Button variant="secondary">Gestionar</Button>
