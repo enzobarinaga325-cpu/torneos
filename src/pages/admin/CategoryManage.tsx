@@ -4,6 +4,7 @@ import { ArrowLeft, Plus, Shuffle, Trash2, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Zone } from "@/lib/types";
 import { buildBracket, computeStandings, matchWinner, proposeZones, roundRobinPairs } from "@/lib/tournament-logic";
+import { FixtureBracket } from "@/components/FixtureBracket";
 import { Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
 
 type Tab = "equipos" | "zonas" | "fixture";
@@ -368,19 +369,29 @@ export function CategoryManage() {
           {!hasFixture ? (
             <Card className="text-center text-sm text-zinc-500">Todavía no se generó el fixture.</Card>
           ) : (
-            <div className="flex gap-4 overflow-x-auto pb-2">
-              {[...new Set(fixtureMatches.map((m) => m.round_order))].sort((a, b) => (a ?? 0) - (b ?? 0)).map((ro) => {
-                const roundMatches = fixtureMatches.filter((m) => m.round_order === ro);
-                return (
-                  <div key={ro} className="flex min-w-[260px] flex-col gap-2">
-                    <h3 className="text-sm font-semibold text-zinc-700">{roundMatches[0]?.round_name}</h3>
-                    {roundMatches.map((m) => (
-                      <MatchRow key={m.id} match={m} teams={teams} courts={courts} onTeamChange={updateMatchTeam} onCourtChange={updateMatchCourt} onScheduleChange={updateMatchSchedule} onSaveResult={saveResult} compact />
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
+            <>
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-zinc-700">Vista para compartir</h3>
+                <FixtureBracket matches={fixtureMatches} teamsById={teamsById} fileName={`fixture-${category.name}`} />
+              </div>
+
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-zinc-700">Cargar horarios y resultados</h3>
+                <div className="flex gap-4 overflow-x-auto pb-2">
+                  {[...new Set(fixtureMatches.map((m) => m.round_order))].sort((a, b) => (a ?? 0) - (b ?? 0)).map((ro) => {
+                    const roundMatches = fixtureMatches.filter((m) => m.round_order === ro);
+                    return (
+                      <div key={ro} className="flex min-w-[260px] flex-col gap-2">
+                        <h4 className="text-sm font-semibold text-zinc-700">{roundMatches[0]?.round_name}</h4>
+                        {roundMatches.map((m) => (
+                          <MatchRow key={m.id} match={m} teams={teams} courts={courts} onTeamChange={updateMatchTeam} onCourtChange={updateMatchCourt} onScheduleChange={updateMatchSchedule} onSaveResult={saveResult} compact />
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
           )}
         </div>
       )}

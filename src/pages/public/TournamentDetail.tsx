@@ -6,6 +6,7 @@ import type { Category, Court, Match, Team, Tournament, Zone } from "@/lib/types
 import { computeStandings, matchWinner } from "@/lib/tournament-logic";
 import { formatDateRange } from "@/lib/format";
 import { useSiteBackground } from "@/lib/useSiteBackground";
+import { FixtureBracket } from "@/components/FixtureBracket";
 import { Spinner } from "@/components/ui";
 
 function formatSchedule(iso: string | null): string | null {
@@ -160,21 +161,11 @@ export function TournamentDetail() {
           {fixtureMatches.length > 0 && (
             <div className="flex flex-col gap-3">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Fixture</h2>
-              <div className="flex gap-4 overflow-x-auto pb-2">
-                {[...new Set(fixtureMatches.map((m) => m.round_order))].sort((a, b) => (a ?? 0) - (b ?? 0)).map((ro) => {
-                  const roundMatches = fixtureMatches.filter((m) => m.round_order === ro);
-                  return (
-                    <div key={ro} className="flex min-w-[240px] flex-col gap-2">
-                      <h3 className="text-sm font-semibold text-zinc-700">{roundMatches[0]?.round_name}</h3>
-                      {roundMatches.map((m) => (
-                        <div key={m.id} className="rounded-xl border border-zinc-200 bg-white p-3">
-                          <PublicMatchLine match={m} teamsById={teamsById} courtsById={courtsById} />
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })}
-              </div>
+              <FixtureBracket
+                matches={fixtureMatches}
+                teamsById={teamsById}
+                fileName={`fixture-${tournament.slug}-${categories.find((c) => c.id === activeCategory)?.name ?? ""}`}
+              />
             </div>
           )}
         </>
