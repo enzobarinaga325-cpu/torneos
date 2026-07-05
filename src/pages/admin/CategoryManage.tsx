@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Plus, Shuffle, Trash2, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Zone } from "@/lib/types";
-import { buildBracket, computeStandings, proposeZones, roundRobinPairs } from "@/lib/tournament-logic";
+import { buildBracket, computeStandings, matchWinner, proposeZones, roundRobinPairs } from "@/lib/tournament-logic";
 import { Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
 
 type Tab = "equipos" | "zonas" | "fixture";
@@ -122,7 +122,7 @@ export function CategoryManage() {
   // ============ FIXTURE ============
   async function generateFixture() {
     const n = Math.max(1, Number(qualifiersPerZone) || 2);
-    const unplayed = zoneMatches.some((m) => m.team1_sets == null || m.team2_sets == null);
+    const unplayed = zoneMatches.some((m) => matchWinner(m) == null);
     if (unplayed && !confirm("Todavía hay partidos de zona sin resultado cargado. ¿Generar el fixture igual con lo que hay?")) return;
     if (hasFixture && !confirm("Ya existe un fixture. Esto lo borra y arma uno nuevo. ¿Seguir?")) return;
 
@@ -183,10 +183,11 @@ export function CategoryManage() {
     load();
   }
 
-  async function saveResult(match: Match, s1: number, s2: number) {
-    if (s1 === s2) { setError("El partido no puede terminar empatado en sets."); return; }
-    const winner_id = s1 > s2 ? match.team1_id : match.team2_id;
-    await supabase.from("matches").update({ team1_sets: s1, team2_sets: s2, winner_id }).eq("id", match.id);
+  async function saveResult(match: Match, sets: Pick<Match, "set1_team1" | "set1_team2" | "set2_team1" | "set2_team2" | "set3_team1" | "set3_team2">) {
+    const winner = matchWinner({ ...match, ...sets });
+    if (!winner) { setError("Cargá al menos 2 sets, y que no queden empatados, para definir un ganador."); return; }
+    const winner_id = winner === 1 ? match.team1_id : match.team2_id;
+    await supabase.from("matches").update({ ...sets, winner_id }).eq("id", match.id);
     if (match.stage === "fixture" && match.next_match_id && winner_id) {
       await supabase
         .from("matches")
@@ -319,6 +320,7 @@ export function CategoryManage() {
                             <th className="px-2 text-center">G</th>
                             <th className="px-2 text-center">P</th>
                             <th className="px-2 text-center">Dif. sets</th>
+                            <th className="px-2 text-center">Dif. games</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -332,6 +334,7 @@ export function CategoryManage() {
                               <td className="px-2 text-center">{s.won}</td>
                               <td className="px-2 text-center">{s.lost}</td>
                               <td className="px-2 text-center">{s.sets_diff > 0 ? `+${s.sets_diff}` : s.sets_diff}</td>
+                              <td className="px-2 text-center">{s.games_diff > 0 ? `+${s.games_diff}` : s.games_diff}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -385,6 +388,8 @@ export function CategoryManage() {
   );
 }
 
+type SetsDraft = Pick<Match, "set1_team1" | "set1_team2" | "set2_team1" | "set2_team2" | "set3_team1" | "set3_team2">;
+
 function MatchRow({
   match, teams, courts, onTeamChange, onCourtChange, onScheduleChange, onSaveResult, compact,
 }: {
@@ -394,13 +399,26 @@ function MatchRow({
   onTeamChange: (m: Match, slot: 1 | 2, teamId: string) => void;
   onCourtChange: (m: Match, courtId: string) => void;
   onScheduleChange: (m: Match, iso: string) => void;
-  onSaveResult: (m: Match, s1: number, s2: number) => void;
+  onSaveResult: (m: Match, sets: SetsDraft) => void;
   compact?: boolean;
 }) {
-  const [s1, setS1] = useState(match.team1_sets ?? 0);
-  const [s2, setS2] = useState(match.team2_sets ?? 0);
-  const played = match.team1_sets != null && match.team2_sets != null;
+  const [sets, setSets] = useState<SetsDraft>({
+    set1_team1: match.set1_team1, set1_team2: match.set1_team2,
+    set2_team1: match.set2_team1, set2_team2: match.set2_team2,
+    set3_team1: match.set3_team1, set3_team2: match.set3_team2,
+  });
+  const played = matchWinner({ ...match, ...sets }) != null;
   const isBye = !match.team1_id || !match.team2_id;
+  // El 3er set solo hace falta si el 1° y el 2° quedaron 1 a 1.
+  const set1Winner = sets.set1_team1 != null && sets.set1_team2 != null && sets.set1_team1 !== sets.set1_team2
+    ? (sets.set1_team1 > sets.set1_team2 ? 1 : 2) : null;
+  const set2Winner = sets.set2_team1 != null && sets.set2_team2 != null && sets.set2_team1 !== sets.set2_team2
+    ? (sets.set2_team1 > sets.set2_team2 ? 1 : 2) : null;
+  const needsThirdSet = set1Winner != null && set2Winner != null && set1Winner !== set2Winner;
+
+  function setField(field: keyof SetsDraft, raw: string) {
+    setSets((s) => ({ ...s, [field]: raw === "" ? null : Number(raw) }));
+  }
 
   return (
     <div className={`rounded-lg border border-zinc-200 p-2.5 ${compact ? "text-xs" : "text-sm"}`}>
@@ -431,11 +449,28 @@ function MatchRow({
               className="rounded-lg border border-zinc-300 px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
             />
           </div>
-          <div className="mt-2 flex items-center gap-2">
-            <input type="number" min={0} value={s1} onChange={(e) => setS1(Number(e.target.value))} className="w-14 rounded-md border border-zinc-300 px-2 py-1 text-center text-xs" />
-            <span className="text-zinc-400">-</span>
-            <input type="number" min={0} value={s2} onChange={(e) => setS2(Number(e.target.value))} className="w-14 rounded-md border border-zinc-300 px-2 py-1 text-center text-xs" />
-            <Button variant="secondary" className="flex-1 px-2 py-1 text-xs" onClick={() => onSaveResult(match, s1, s2)}>
+          <div className="mt-2 flex flex-col gap-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className="w-10 shrink-0 text-[10px] uppercase text-zinc-400">Set 1</span>
+              <input type="number" min={0} value={sets.set1_team1 ?? ""} onChange={(e) => setField("set1_team1", e.target.value)} className="w-12 rounded-md border border-zinc-300 px-2 py-1 text-center text-xs" />
+              <span className="text-zinc-400">-</span>
+              <input type="number" min={0} value={sets.set1_team2 ?? ""} onChange={(e) => setField("set1_team2", e.target.value)} className="w-12 rounded-md border border-zinc-300 px-2 py-1 text-center text-xs" />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-10 shrink-0 text-[10px] uppercase text-zinc-400">Set 2</span>
+              <input type="number" min={0} value={sets.set2_team1 ?? ""} onChange={(e) => setField("set2_team1", e.target.value)} className="w-12 rounded-md border border-zinc-300 px-2 py-1 text-center text-xs" />
+              <span className="text-zinc-400">-</span>
+              <input type="number" min={0} value={sets.set2_team2 ?? ""} onChange={(e) => setField("set2_team2", e.target.value)} className="w-12 rounded-md border border-zinc-300 px-2 py-1 text-center text-xs" />
+            </div>
+            {(needsThirdSet || sets.set3_team1 != null || sets.set3_team2 != null) && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-10 shrink-0 text-[10px] uppercase text-zinc-400">Set 3</span>
+                <input type="number" min={0} value={sets.set3_team1 ?? ""} onChange={(e) => setField("set3_team1", e.target.value)} className="w-12 rounded-md border border-zinc-300 px-2 py-1 text-center text-xs" />
+                <span className="text-zinc-400">-</span>
+                <input type="number" min={0} value={sets.set3_team2 ?? ""} onChange={(e) => setField("set3_team2", e.target.value)} className="w-12 rounded-md border border-zinc-300 px-2 py-1 text-center text-xs" />
+              </div>
+            )}
+            <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => onSaveResult(match, sets)}>
               {played ? "Actualizar resultado" : "Guardar resultado"}
             </Button>
           </div>

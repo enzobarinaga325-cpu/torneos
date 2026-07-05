@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, CalendarClock, Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Tournament } from "@/lib/types";
+import { buildSchedule } from "@/lib/tournament-logic";
 import { Button, Card, Input, Label, Spinner } from "@/components/ui";
 
 export function TournamentManage() {
@@ -12,6 +13,9 @@ export function TournamentManage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [courtName, setCourtName] = useState("");
   const [categoryName, setCategoryName] = useState("");
+  const [startTime, setStartTime] = useState("12:00");
+  const [matchMinutes, setMatchMinutes] = useState("60");
+  const [scheduling, setScheduling] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
@@ -23,12 +27,70 @@ export function TournamentManage() {
     setTournament(t ?? null);
     setCourts(c ?? []);
     setCategories(cats ?? []);
+    if (t) {
+      setStartTime((t.default_start_time ?? "12:00:00").slice(0, 5));
+      setMatchMinutes(String(t.default_match_minutes ?? 60));
+    }
   }
 
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  async function saveScheduleDefaults() {
+    await supabase
+      .from("tournaments")
+      .update({ default_start_time: startTime, default_match_minutes: Math.max(15, Number(matchMinutes) || 60) })
+      .eq("id", id!);
+    load();
+  }
+
+  async function autoSchedule() {
+    if (!tournament?.start_date) { setError("Primero cargale una fecha de inicio al torneo."); return; }
+    if (courts.length === 0) { setError("Cargá al menos una cancha primero."); return; }
+    if (categories.length === 0) return;
+    setScheduling(true);
+    setError(null);
+    await saveScheduleDefaults();
+
+    const categoryOrder = new Map(categories.map((c, i) => [c.id, i]));
+    const { data: matches } = await supabase
+      .from("matches")
+      .select("*, zone:zones(position)")
+      .in("category_id", categories.map((c) => c.id))
+      .is("scheduled_at", null)
+      .not("team1_id", "is", null)
+      .not("team2_id", "is", null);
+
+    const pending = (matches ?? []).sort((a, b) => {
+      const catDiff = (categoryOrder.get(a.category_id) ?? 0) - (categoryOrder.get(b.category_id) ?? 0);
+      if (catDiff !== 0) return catDiff;
+      if (a.stage !== b.stage) return a.stage === "zona" ? -1 : 1;
+      const zoneDiff = (a.zone?.position ?? 0) - (b.zone?.position ?? 0);
+      if (zoneDiff !== 0) return zoneDiff;
+      return (a.round_order ?? 0) - (b.round_order ?? 0) || a.position - b.position;
+    });
+
+    if (pending.length === 0) {
+      setScheduling(false);
+      setError("No hay partidos pendientes de horario (o ya están todos agendados).");
+      return;
+    }
+
+    const assignments = buildSchedule(
+      pending.map((m) => m.id),
+      courts.map((c) => c.id),
+      tournament.start_date,
+      startTime,
+      Math.max(15, Number(matchMinutes) || 60),
+    );
+    for (const a of assignments) {
+      await supabase.from("matches").update({ court_id: a.courtId, scheduled_at: a.scheduledAt }).eq("id", a.matchId);
+    }
+    setScheduling(false);
+    load();
+  }
 
   async function addCourt(e: React.FormEvent) {
     e.preventDefault();
@@ -81,6 +143,27 @@ export function TournamentManage() {
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
+
+      <Card>
+        <h2 className="mb-1 text-sm font-semibold">Horarios</h2>
+        <p className="mb-3 text-xs text-zinc-500">
+          Define a qué hora arranca el primer turno de partidos y cuánto dura cada uno. "Autocompletar horarios" agenda todos los
+          partidos pendientes (sin fecha) en cadena, repartidos entre las canchas cargadas.
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="w-32">
+            <Label>Hora de inicio</Label>
+            <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} onBlur={saveScheduleDefaults} />
+          </div>
+          <div className="w-40">
+            <Label>Minutos por partido</Label>
+            <Input type="number" min={15} step={5} value={matchMinutes} onChange={(e) => setMatchMinutes(e.target.value)} onBlur={saveScheduleDefaults} />
+          </div>
+          <Button onClick={autoSchedule} disabled={scheduling}>
+            <CalendarClock className="h-3.5 w-3.5" /> {scheduling ? "Agendando…" : "Autocompletar horarios"}
+          </Button>
+        </div>
+      </Card>
 
       <Card>
         <h2 className="mb-3 text-sm font-semibold">Canchas</h2>

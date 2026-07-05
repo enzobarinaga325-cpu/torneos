@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, MapPin, Trophy, Clock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Tournament, Zone } from "@/lib/types";
-import { computeStandings } from "@/lib/tournament-logic";
+import { computeStandings, matchWinner } from "@/lib/tournament-logic";
 import { formatDateRange } from "@/lib/format";
 import { Spinner } from "@/components/ui";
 
@@ -137,7 +137,7 @@ export function TournamentDetail() {
                               <td className="px-2 text-center">{s.played}</td>
                               <td className="px-2 text-center">{s.won}</td>
                               <td className="px-2 text-center">{s.lost}</td>
-                              <td className="px-2 text-center">{s.sets_diff > 0 ? `+${s.sets_diff}` : s.sets_diff}</td>
+                              <td className="px-2 text-center">{s.sets_diff > 0 ? `+${s.sets_diff}` : s.sets_diff}/{s.games_diff > 0 ? `+${s.games_diff}` : s.games_diff}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -183,7 +183,12 @@ export function TournamentDetail() {
 function PublicMatchLine({ match, teamsById, courtsById }: { match: Match; teamsById: Record<string, Team>; courtsById: Record<string, Court> }) {
   const t1 = match.team1_id ? teamsById[match.team1_id]?.name ?? "?" : "—";
   const t2 = match.team2_id ? teamsById[match.team2_id]?.name ?? "?" : "—";
-  const played = match.team1_sets != null && match.team2_sets != null;
+  const played = matchWinner(match) != null;
+  const sets = [
+    [match.set1_team1, match.set1_team2],
+    [match.set2_team1, match.set2_team2],
+    [match.set3_team1, match.set3_team2],
+  ].filter(([a, b]) => a != null && b != null) as [number, number][];
   const schedule = formatSchedule(match.scheduled_at);
   const court = match.court_id ? courtsById[match.court_id]?.name : null;
 
@@ -195,11 +200,11 @@ function PublicMatchLine({ match, teamsById, courtsById }: { match: Match; teams
     <div className="flex flex-col gap-0.5 text-sm">
       <div className="flex items-center justify-between gap-2">
         <span className={match.winner_id === match.team1_id ? "font-semibold text-emerald-700" : ""}>{t1}</span>
-        {played && <span className="font-mono text-xs">{match.team1_sets}</span>}
+        {played && <span className="font-mono text-xs">{sets.map(([a]) => a).join(" ")}</span>}
       </div>
       <div className="flex items-center justify-between gap-2">
         <span className={match.winner_id === match.team2_id ? "font-semibold text-emerald-700" : ""}>{t2}</span>
-        {played && <span className="font-mono text-xs">{match.team2_sets}</span>}
+        {played && <span className="font-mono text-xs">{sets.map(([, b]) => b).join(" ")}</span>}
       </div>
       {(schedule || court) && (
         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-zinc-400">

@@ -31,24 +31,70 @@ export function roundRobinPairs(teamIds: string[]): [string, string][] {
   return pairs;
 }
 
-/** Tabla de posiciones de una zona: partidos ganados, luego diferencia de sets. */
+type SetScore = [number | null, number | null];
+
+/** Quién ganó un set puntual (games de cada equipo). null si falta cargar o está empatado. */
+function setWinner(a: number | null, b: number | null): 1 | 2 | null {
+  if (a == null || b == null || a === b) return null;
+  return a > b ? 1 : 2;
+}
+
+/** Los 3 sets de un partido (el tercero es opcional, solo si el 1° y el 2° se dividieron). */
+function matchSets(m: Match): SetScore[] {
+  return [
+    [m.set1_team1, m.set1_team2],
+    [m.set2_team1, m.set2_team2],
+    [m.set3_team1, m.set3_team2],
+  ];
+}
+
+/** Ganador del partido (1 o 2) en base a quién se llevó 2 sets. null si todavía no está definido. */
+export function matchWinner(m: Match): 1 | 2 | null {
+  const results = matchSets(m).map(([a, b]) => setWinner(a, b));
+  const w1 = results.filter((r) => r === 1).length;
+  const w2 = results.filter((r) => r === 2).length;
+  if (w1 >= 2) return 1;
+  if (w2 >= 2) return 2;
+  return null;
+}
+
+/** Tabla de posiciones de una zona: partidos ganados, luego diferencia de sets y de games. */
 export function computeStandings(teamIds: string[], matches: Match[]): ZoneStanding[] {
   const table = new Map<string, ZoneStanding>();
-  for (const id of teamIds) table.set(id, { team_id: id, played: 0, won: 0, lost: 0, sets_won: 0, sets_lost: 0, sets_diff: 0 });
+  for (const id of teamIds) {
+    table.set(id, { team_id: id, played: 0, won: 0, lost: 0, sets_won: 0, sets_lost: 0, sets_diff: 0, games_won: 0, games_lost: 0, games_diff: 0 });
+  }
 
   for (const m of matches) {
-    if (m.team1_sets == null || m.team2_sets == null || !m.team1_id || !m.team2_id) continue;
+    if (!m.team1_id || !m.team2_id) continue;
+    const winner = matchWinner(m);
+    if (!winner) continue;
     const t1 = table.get(m.team1_id);
     const t2 = table.get(m.team2_id);
     if (!t1 || !t2) continue;
-    t1.played++; t2.played++;
-    t1.sets_won += m.team1_sets; t1.sets_lost += m.team2_sets;
-    t2.sets_won += m.team2_sets; t2.sets_lost += m.team1_sets;
-    if (m.team1_sets > m.team2_sets) { t1.won++; t2.lost++; } else { t2.won++; t1.lost++; }
-  }
-  for (const t of table.values()) t.sets_diff = t.sets_won - t.sets_lost;
 
-  return [...table.values()].sort((a, b) => b.won - a.won || b.sets_diff - a.sets_diff || b.sets_won - a.sets_won);
+    let setsFor1 = 0, setsFor2 = 0, gamesFor1 = 0, gamesFor2 = 0;
+    for (const [a, b] of matchSets(m)) {
+      if (a == null || b == null) continue;
+      gamesFor1 += a; gamesFor2 += b;
+      if (a > b) setsFor1++; else if (b > a) setsFor2++;
+    }
+
+    t1.played++; t2.played++;
+    t1.sets_won += setsFor1; t1.sets_lost += setsFor2;
+    t2.sets_won += setsFor2; t2.sets_lost += setsFor1;
+    t1.games_won += gamesFor1; t1.games_lost += gamesFor2;
+    t2.games_won += gamesFor2; t2.games_lost += gamesFor1;
+    if (winner === 1) { t1.won++; t2.lost++; } else { t2.won++; t1.lost++; }
+  }
+  for (const t of table.values()) {
+    t.sets_diff = t.sets_won - t.sets_lost;
+    t.games_diff = t.games_won - t.games_lost;
+  }
+
+  return [...table.values()].sort(
+    (a, b) => b.won - a.won || b.sets_diff - a.sets_diff || b.games_diff - a.games_diff,
+  );
 }
 
 /** Orden de siembra estándar de un cuadro de N (potencia de 2): 1v N, ... clásico de torneos. */
@@ -177,4 +223,31 @@ export function buildBracket(qualifiersByZone: string[][]): BracketMatchPlan[] {
   }
 
   return flat;
+}
+
+export type ScheduleAssignment = { matchId: string; courtId: string; scheduledAt: string };
+
+/**
+ * Reparte partidos en cadena entre las canchas disponibles: los primeros N (una por
+ * cancha) arrancan a `startTime`, los siguientes N una `durationMinutes` después, y así
+ * hasta terminar. `matchIds` debe venir ya en el orden en que se quieren agendar.
+ */
+export function buildSchedule(
+  matchIds: string[],
+  courtIds: string[],
+  startDate: string,
+  startTime: string,
+  durationMinutes: number,
+): ScheduleAssignment[] {
+  if (courtIds.length === 0 || matchIds.length === 0) return [];
+  const [h, min] = startTime.split(":").map(Number);
+  const base = new Date(`${startDate}T00:00:00`);
+  base.setHours(h || 0, min || 0, 0, 0);
+
+  return matchIds.map((matchId, i) => {
+    const slot = Math.floor(i / courtIds.length);
+    const courtId = courtIds[i % courtIds.length];
+    const scheduledAt = new Date(base.getTime() + slot * durationMinutes * 60000).toISOString();
+    return { matchId, courtId, scheduledAt };
+  });
 }
