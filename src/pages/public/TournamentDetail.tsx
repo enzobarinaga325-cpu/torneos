@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Trophy } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Tournament, Zone } from "@/lib/types";
-import { computeStandings, matchWinner } from "@/lib/tournament-logic";
 import { formatDateRange, todayStr } from "@/lib/format";
 import { useSiteBackground } from "@/lib/useSiteBackground";
 import { FixtureBracket } from "@/components/FixtureBracket";
@@ -162,48 +161,6 @@ export function TournamentDetail() {
                 fileName={`zonas-${tournament.slug}-${categories.find((c) => c.id === activeCategory)?.name ?? ""}`}
                 showDownload={false}
               />
-              {zones.map((zone) => {
-                const zoneTeamIds = teams.filter((t) => t.zone_id === zone.id).map((t) => t.id);
-                const standings = computeStandings(zoneTeamIds, zoneMatches.filter((m) => m.zone_id === zone.id));
-                const myMatches = zoneMatches.filter((m) => m.zone_id === zone.id);
-                return (
-                  <div key={zone.id} className="rounded-xl border border-zinc-200 bg-white p-4">
-                    <h3 className="mb-2 font-semibold">{zone.name}</h3>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead className="text-left text-zinc-400">
-                          <tr>
-                            <th className="py-1 pr-2">Equipo</th>
-                            <th className="px-2 text-center">PJ</th>
-                            <th className="px-2 text-center">G</th>
-                            <th className="px-2 text-center">P</th>
-                            <th className="px-2 text-center">Dif.</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {standings.map((s, i) => (
-                            <tr key={s.team_id} className="border-t border-zinc-100">
-                              <td className="py-1.5 pr-2 font-medium">
-                                {i === 0 && <Trophy className="mr-1 inline h-3 w-3 text-amber-500" />}
-                                {teamsById[s.team_id]?.name ?? "?"}
-                              </td>
-                              <td className="px-2 text-center">{s.played}</td>
-                              <td className="px-2 text-center">{s.won}</td>
-                              <td className="px-2 text-center">{s.lost}</td>
-                              <td className="px-2 text-center">{s.sets_diff > 0 ? `+${s.sets_diff}` : s.sets_diff}/{s.games_diff > 0 ? `+${s.games_diff}` : s.games_diff}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="mt-3 flex flex-col gap-1.5">
-                      {myMatches.map((m) => (
-                        <PublicMatchLine key={m.id} match={m} teamsById={teamsById} />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
             </div>
           )}
 
@@ -221,35 +178,6 @@ export function TournamentDetail() {
         </>
       )}
     </div>
-    </div>
-  );
-}
-
-/** Solo equipos y resultado — la cancha y el horario ya se ven arriba, en la grilla del día. */
-function PublicMatchLine({ match, teamsById }: { match: Match; teamsById: Record<string, Team> }) {
-  const t1 = match.team1_id ? teamsById[match.team1_id]?.name ?? "?" : "—";
-  const t2 = match.team2_id ? teamsById[match.team2_id]?.name ?? "?" : "—";
-  const played = matchWinner(match) != null;
-  const sets = [
-    [match.set1_team1, match.set1_team2],
-    [match.set2_team1, match.set2_team2],
-    [match.set3_team1, match.set3_team2],
-  ].filter(([a, b]) => a != null && b != null) as [number, number][];
-
-  if (!match.team1_id || !match.team2_id) {
-    return <p className="text-xs text-zinc-400">{t1 !== "—" ? t1 : t2} — pase directo</p>;
-  }
-
-  return (
-    <div className="flex flex-col gap-0.5 text-sm">
-      <div className="flex items-center justify-between gap-2">
-        <span className={match.winner_id === match.team1_id ? "font-semibold text-emerald-700" : ""}>{t1}</span>
-        {played && <span className="font-mono text-xs">{sets.map(([a]) => a).join(" ")}</span>}
-      </div>
-      <div className="flex items-center justify-between gap-2">
-        <span className={match.winner_id === match.team2_id ? "font-semibold text-emerald-700" : ""}>{t2}</span>
-        {played && <span className="font-mono text-xs">{sets.map(([, b]) => b).join(" ")}</span>}
-      </div>
     </div>
   );
 }

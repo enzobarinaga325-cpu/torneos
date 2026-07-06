@@ -227,6 +227,8 @@ export function buildBracket(qualifiersByZone: string[][]): BracketMatchPlan[] {
 
 export type ScheduleAssignment = { matchId: string; courtId: string; scheduledAt: string };
 export type DayWindow = { date: string; start_time: string; end_time: string };
+export type SchedulableMatch = { id: string; team1_id: string | null; team2_id: string | null };
+export type ExistingSchedule = { court_id: string; scheduled_at: string; team1_id: string | null; team2_id: string | null };
 
 function toDateTime(date: string, time: string): Date {
   const [h, min] = time.split(":").map(Number);
@@ -241,39 +243,73 @@ export function slotKey(courtId: string, scheduledAt: string): string {
 }
 
 /**
- * Reparte partidos en cadena entre las canchas disponibles, día por día: dentro de cada
- * día arrancan a su `start_time`, una cancha por turno, avanzando `durationMinutes` en
- * cadena hasta llegar a `end_time` — ahí salta al próximo día. `matchIds` ya debe venir
- * en el orden en que se quieren agendar. Salta cualquier turno que ya figure en
- * `occupiedSlots` (partidos ya agendados de una corrida anterior), para no pisarlos. Si
- * no entran todos en los días cargados, los que sobran quedan sin agendar (se informa
- * cuántos en `unscheduledCount`).
+ * Reparte partidos entre las canchas disponibles, día por día, respetando dos reglas
+ * duras: un mismo equipo nunca queda en dos partidos al mismo horario, y entre dos
+ * partidos de un mismo equipo se deja libre al menos un turno de descanso. `matches` ya
+ * debe venir en el orden de prioridad en que se quieren agendar (se rellena lo que se
+ * pueda en cada horario, sin bloquear a los que siguen si un partido puntual no entra
+ * todavía por falta de descanso). `alreadyScheduled` son los partidos que ya tienen
+ * cancha+horario (de una corrida anterior u otra categoría): sus turnos no se reparten
+ * de nuevo y sus equipos también cuentan para el descanso. Si no entran todos en los
+ * días cargados, los que sobran quedan sin agendar (se informa cuántos en
+ * `unscheduledCount`).
  */
 export function buildSchedule(
-  matchIds: string[],
+  matches: SchedulableMatch[],
   courtIds: string[],
   days: DayWindow[],
   durationMinutes: number,
-  occupiedSlots: Set<string> = new Set(),
+  alreadyScheduled: ExistingSchedule[] = [],
 ): { assignments: ScheduleAssignment[]; unscheduledCount: number } {
-  if (courtIds.length === 0 || matchIds.length === 0 || days.length === 0) {
-    return { assignments: [], unscheduledCount: matchIds.length };
+  if (courtIds.length === 0 || matches.length === 0 || days.length === 0) {
+    return { assignments: [], unscheduledCount: matches.length };
   }
 
-  const slots: { courtId: string; scheduledAt: string }[] = [];
+  const timeSlots: string[] = [];
   for (const day of days) {
     let t = toDateTime(day.date, day.start_time);
     const end = toDateTime(day.date, day.end_time);
     while (t < end) {
-      for (const courtId of courtIds) {
-        if (t >= end) break;
-        const scheduledAt = t.toISOString();
-        if (!occupiedSlots.has(slotKey(courtId, scheduledAt))) slots.push({ courtId, scheduledAt });
-      }
+      timeSlots.push(t.toISOString());
       t = new Date(t.getTime() + durationMinutes * 60000);
     }
   }
 
-  const assignments = matchIds.slice(0, slots.length).map((matchId, i) => ({ matchId, ...slots[i] }));
-  return { assignments, unscheduledCount: Math.max(0, matchIds.length - slots.length) };
+  const occupiedCourtSlots = new Set(
+    alreadyScheduled.map((m) => slotKey(m.court_id, m.scheduled_at)),
+  );
+  // Último horario (timestamp) en que jugó cada equipo, arrancando de lo ya agendado.
+  const lastPlayed = new Map<string, number>();
+  for (const m of alreadyScheduled) {
+    const ts = new Date(m.scheduled_at).getTime();
+    if (m.team1_id) lastPlayed.set(m.team1_id, Math.max(lastPlayed.get(m.team1_id) ?? -Infinity, ts));
+    if (m.team2_id) lastPlayed.set(m.team2_id, Math.max(lastPlayed.get(m.team2_id) ?? -Infinity, ts));
+  }
+
+  const minGapMs = durationMinutes * 60000 * 2; // deja al menos un turno libre de descanso
+  const remaining = [...matches];
+  const assignments: ScheduleAssignment[] = [];
+
+  for (const iso of timeSlots) {
+    if (remaining.length === 0) break;
+    const ts = new Date(iso).getTime();
+    const busyThisSlot = new Set<string>();
+    for (const courtId of courtIds) {
+      if (occupiedCourtSlots.has(slotKey(courtId, iso))) continue;
+      const idx = remaining.findIndex((m) => {
+        if (m.team1_id && busyThisSlot.has(m.team1_id)) return false;
+        if (m.team2_id && busyThisSlot.has(m.team2_id)) return false;
+        if (m.team1_id && ts - (lastPlayed.get(m.team1_id) ?? -Infinity) < minGapMs) return false;
+        if (m.team2_id && ts - (lastPlayed.get(m.team2_id) ?? -Infinity) < minGapMs) return false;
+        return true;
+      });
+      if (idx === -1) continue;
+      const match = remaining.splice(idx, 1)[0];
+      assignments.push({ matchId: match.id, courtId, scheduledAt: iso });
+      if (match.team1_id) { busyThisSlot.add(match.team1_id); lastPlayed.set(match.team1_id, ts); }
+      if (match.team2_id) { busyThisSlot.add(match.team2_id); lastPlayed.set(match.team2_id, ts); }
+    }
+  }
+
+  return { assignments, unscheduledCount: remaining.length };
 }

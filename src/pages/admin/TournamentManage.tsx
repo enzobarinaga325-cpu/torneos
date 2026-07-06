@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, CalendarClock, RefreshCw, Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Tournament, TournamentDay } from "@/lib/types";
-import { buildSchedule, slotKey } from "@/lib/tournament-logic";
+import { buildSchedule } from "@/lib/tournament-logic";
 import { todayStr } from "@/lib/format";
 import { DayGrid } from "@/components/DayGrid";
 import { Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
@@ -114,9 +114,13 @@ export function TournamentManage() {
         .is("scheduled_at", null)
         .not("team1_id", "is", null)
         .not("team2_id", "is", null),
-      // Partidos que ya tienen cancha+horario (de una corrida anterior u otra categoría),
-      // para no volver a repartir esos mismos turnos y terminar con dos partidos pisados.
-      supabase.from("matches").select("court_id, scheduled_at").in("category_id", categoryIds).not("scheduled_at", "is", null),
+      // Partidos que ya tienen cancha+horario (de una corrida anterior u otra categoría):
+      // sus turnos no se reparten de nuevo, y sus equipos también cuentan para el descanso.
+      supabase
+        .from("matches")
+        .select("court_id, scheduled_at, team1_id, team2_id")
+        .in("category_id", categoryIds)
+        .not("scheduled_at", "is", null),
     ]);
 
     const pending = (matches ?? []).sort((a, b) => {
@@ -134,15 +138,12 @@ export function TournamentManage() {
       return;
     }
 
-    const occupiedSlots = new Set(
-      (scheduled ?? []).filter((m) => m.court_id && m.scheduled_at).map((m) => slotKey(m.court_id!, m.scheduled_at!)),
-    );
     const { assignments, unscheduledCount } = buildSchedule(
-      pending.map((m) => m.id),
+      pending.map((m) => ({ id: m.id, team1_id: m.team1_id, team2_id: m.team2_id })),
       courts.map((c) => c.id),
       [...days].sort((a, b) => a.date.localeCompare(b.date)).map((d) => ({ date: d.date, start_time: d.start_time, end_time: d.end_time })),
       Math.max(15, Number(matchMinutes) || 60),
-      occupiedSlots,
+      (scheduled ?? []).filter((m): m is typeof m & { court_id: string; scheduled_at: string } => !!m.court_id && !!m.scheduled_at),
     );
     for (const a of assignments) {
       await supabase.from("matches").update({ court_id: a.courtId, scheduled_at: a.scheduledAt }).eq("id", a.matchId);
