@@ -226,28 +226,45 @@ export function buildBracket(qualifiersByZone: string[][]): BracketMatchPlan[] {
 }
 
 export type ScheduleAssignment = { matchId: string; courtId: string; scheduledAt: string };
+export type DayWindow = { date: string; start_time: string; end_time: string };
+
+function toDateTime(date: string, time: string): Date {
+  const [h, min] = time.split(":").map(Number);
+  const d = new Date(`${date}T00:00:00`);
+  d.setHours(h || 0, min || 0, 0, 0);
+  return d;
+}
 
 /**
- * Reparte partidos en cadena entre las canchas disponibles: los primeros N (una por
- * cancha) arrancan a `startTime`, los siguientes N una `durationMinutes` después, y así
- * hasta terminar. `matchIds` debe venir ya en el orden en que se quieren agendar.
+ * Reparte partidos en cadena entre las canchas disponibles, día por día: dentro de cada
+ * día arrancan a su `start_time`, una cancha por turno, avanzando `durationMinutes` en
+ * cadena hasta llegar a `end_time` — ahí salta al próximo día. `matchIds` ya debe venir
+ * en el orden en que se quieren agendar. Si no entran todos en los días cargados, los que
+ * sobran quedan sin agendar (se informa cuántos en `unscheduledCount`).
  */
 export function buildSchedule(
   matchIds: string[],
   courtIds: string[],
-  startDate: string,
-  startTime: string,
+  days: DayWindow[],
   durationMinutes: number,
-): ScheduleAssignment[] {
-  if (courtIds.length === 0 || matchIds.length === 0) return [];
-  const [h, min] = startTime.split(":").map(Number);
-  const base = new Date(`${startDate}T00:00:00`);
-  base.setHours(h || 0, min || 0, 0, 0);
+): { assignments: ScheduleAssignment[]; unscheduledCount: number } {
+  if (courtIds.length === 0 || matchIds.length === 0 || days.length === 0) {
+    return { assignments: [], unscheduledCount: matchIds.length };
+  }
 
-  return matchIds.map((matchId, i) => {
-    const slot = Math.floor(i / courtIds.length);
-    const courtId = courtIds[i % courtIds.length];
-    const scheduledAt = new Date(base.getTime() + slot * durationMinutes * 60000).toISOString();
-    return { matchId, courtId, scheduledAt };
-  });
+  const slots: { courtId: string; scheduledAt: string }[] = [];
+  for (const day of days) {
+    let t = toDateTime(day.date, day.start_time);
+    const end = toDateTime(day.date, day.end_time);
+    while (t < end) {
+      for (const courtId of courtIds) {
+        if (t >= end) break;
+        slots.push({ courtId, scheduledAt: t.toISOString() });
+      }
+      t = new Date(t.getTime() + durationMinutes * 60000);
+    }
+  }
+
+  const assignments = matchIds.slice(0, slots.length).map((matchId, i) => ({ matchId, ...slots[i] }));
+  return { assignments, unscheduledCount: Math.max(0, matchIds.length - slots.length) };
 }

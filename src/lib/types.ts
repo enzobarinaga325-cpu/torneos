@@ -25,6 +25,14 @@ export type Court = {
   created_at: string;
 };
 
+export type TournamentDay = {
+  id: string;
+  tournament_id: string;
+  date: string; // "YYYY-MM-DD"
+  start_time: string; // "HH:MM:SS"
+  end_time: string; // "HH:MM:SS"
+};
+
 export type Category = {
   id: string;
   tournament_id: string;

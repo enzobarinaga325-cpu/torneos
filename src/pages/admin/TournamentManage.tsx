@@ -1,36 +1,49 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, CalendarClock, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, CalendarClock, RefreshCw, Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { Category, Court, Tournament } from "@/lib/types";
+import type { Category, Court, Tournament, TournamentDay } from "@/lib/types";
 import { buildSchedule } from "@/lib/tournament-logic";
 import { Button, Card, Input, Label, Spinner } from "@/components/ui";
+
+/** Todas las fechas "YYYY-MM-DD" entre start y end, ambas incluidas. */
+function enumerateDates(start: string, end: string): string[] {
+  const dates: string[] = [];
+  const [sy, sm, sd] = start.split("-").map(Number);
+  const [ey, em, ed] = end.split("-").map(Number);
+  const cur = new Date(sy, sm - 1, sd);
+  const last = new Date(ey, em - 1, ed);
+  while (cur <= last) {
+    dates.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}
 
 export function TournamentManage() {
   const { id } = useParams<{ id: string }>();
   const [tournament, setTournament] = useState<Tournament | null | undefined>(undefined);
   const [courts, setCourts] = useState<Court[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [days, setDays] = useState<TournamentDay[]>([]);
   const [courtName, setCourtName] = useState("");
   const [categoryName, setCategoryName] = useState("");
-  const [startTime, setStartTime] = useState("12:00");
   const [matchMinutes, setMatchMinutes] = useState("60");
   const [scheduling, setScheduling] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    const [{ data: t }, { data: c }, { data: cats }] = await Promise.all([
+    const [{ data: t }, { data: c }, { data: cats }, { data: d }] = await Promise.all([
       supabase.from("tournaments").select("*").eq("id", id!).maybeSingle(),
       supabase.from("courts").select("*").eq("tournament_id", id!).order("name"),
       supabase.from("categories").select("*").eq("tournament_id", id!).order("created_at"),
+      supabase.from("tournament_days").select("*").eq("tournament_id", id!).order("date"),
     ]);
     setTournament(t ?? null);
     setCourts(c ?? []);
     setCategories(cats ?? []);
-    if (t) {
-      setStartTime((t.default_start_time ?? "12:00:00").slice(0, 5));
-      setMatchMinutes(String(t.default_match_minutes ?? 60));
-    }
+    setDays(d ?? []);
+    if (t) setMatchMinutes(String(t.default_match_minutes ?? 60));
   }
 
   useEffect(() => {
@@ -38,21 +51,37 @@ export function TournamentManage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  async function saveScheduleDefaults() {
+  async function saveMatchMinutes() {
     await supabase
       .from("tournaments")
-      .update({ default_start_time: startTime, default_match_minutes: Math.max(15, Number(matchMinutes) || 60) })
+      .update({ default_match_minutes: Math.max(15, Number(matchMinutes) || 60) })
       .eq("id", id!);
+  }
+
+  /** Crea una fila por cada día entre start_date y end_date que todavía no la tenga. */
+  async function syncDays() {
+    if (!tournament?.start_date) { setError("Primero cargale fecha de inicio (y de fin) al torneo."); return; }
+    const dates = enumerateDates(tournament.start_date, tournament.end_date ?? tournament.start_date);
+    const existing = new Set(days.map((d) => d.date));
+    const missing = dates.filter((date) => !existing.has(date));
+    if (missing.length > 0) {
+      await supabase.from("tournament_days").insert(missing.map((date) => ({ tournament_id: id, date })));
+    }
     load();
   }
 
+  async function updateDay(day: TournamentDay, patch: Partial<Pick<TournamentDay, "start_time" | "end_time">>) {
+    await supabase.from("tournament_days").update(patch).eq("id", day.id);
+    setDays((ds) => ds.map((d) => (d.id === day.id ? { ...d, ...patch } : d)));
+  }
+
   async function autoSchedule() {
-    if (!tournament?.start_date) { setError("Primero cargale una fecha de inicio al torneo."); return; }
     if (courts.length === 0) { setError("Cargá al menos una cancha primero."); return; }
+    if (days.length === 0) { setError('Cargá los días del torneo primero ("Sincronizar días").'); return; }
     if (categories.length === 0) return;
     setScheduling(true);
     setError(null);
-    await saveScheduleDefaults();
+    await saveMatchMinutes();
 
     const categoryOrder = new Map(categories.map((c, i) => [c.id, i]));
     const { data: matches } = await supabase
@@ -78,17 +107,19 @@ export function TournamentManage() {
       return;
     }
 
-    const assignments = buildSchedule(
+    const { assignments, unscheduledCount } = buildSchedule(
       pending.map((m) => m.id),
       courts.map((c) => c.id),
-      tournament.start_date,
-      startTime,
+      [...days].sort((a, b) => a.date.localeCompare(b.date)).map((d) => ({ date: d.date, start_time: d.start_time, end_time: d.end_time })),
       Math.max(15, Number(matchMinutes) || 60),
     );
     for (const a of assignments) {
       await supabase.from("matches").update({ court_id: a.courtId, scheduled_at: a.scheduledAt }).eq("id", a.matchId);
     }
     setScheduling(false);
+    if (unscheduledCount > 0) {
+      setError(`Se agendaron ${assignments.length} partidos. No entraron ${unscheduledCount} más: agregá más días o extendé los horarios.`);
+    }
     load();
   }
 
@@ -147,22 +178,53 @@ export function TournamentManage() {
       <Card>
         <h2 className="mb-1 text-sm font-semibold">Horarios</h2>
         <p className="mb-3 text-xs text-zinc-500">
-          Define a qué hora arranca el primer turno de partidos y cuánto dura cada uno. "Autocompletar horarios" agenda todos los
-          partidos pendientes (sin fecha) en cadena, repartidos entre las canchas cargadas.
+          Cada día del torneo tiene su propia hora de inicio y de cierre. "Autocompletar horarios" agenda los partidos pendientes en
+          cadena dentro de esas ventanas, repartidos entre las canchas — si un día se llena, sigue en el siguiente.
         </p>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="w-32">
-            <Label>Hora de inicio</Label>
-            <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} onBlur={saveScheduleDefaults} />
-          </div>
+
+        <div className="mb-3 flex flex-wrap items-end gap-3">
           <div className="w-40">
             <Label>Minutos por partido</Label>
-            <Input type="number" min={15} step={5} value={matchMinutes} onChange={(e) => setMatchMinutes(e.target.value)} onBlur={saveScheduleDefaults} />
+            <Input type="number" min={15} step={5} value={matchMinutes} onChange={(e) => setMatchMinutes(e.target.value)} onBlur={saveMatchMinutes} />
           </div>
+          <Button variant="secondary" onClick={syncDays}>
+            <RefreshCw className="h-3.5 w-3.5" /> Sincronizar días
+          </Button>
           <Button onClick={autoSchedule} disabled={scheduling}>
             <CalendarClock className="h-3.5 w-3.5" /> {scheduling ? "Agendando…" : "Autocompletar horarios"}
           </Button>
         </div>
+
+        {days.length === 0 ? (
+          <p className="text-xs text-zinc-500">
+            Todavía no hay días cargados. Cargale fecha de inicio (y fin) al torneo en la lista de Torneos, después tocá
+            "Sincronizar días".
+          </p>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {days.map((d) => (
+              <div key={d.id} className="flex flex-wrap items-center gap-3 rounded-lg bg-zinc-50 px-3 py-2 text-sm">
+                <span className="w-28 font-medium">{d.date}</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-zinc-500">de</span>
+                  <input
+                    type="time"
+                    defaultValue={d.start_time.slice(0, 5)}
+                    onBlur={(e) => updateDay(d, { start_time: e.target.value })}
+                    className="rounded-md border border-zinc-300 px-2 py-1 text-xs"
+                  />
+                  <span className="text-xs text-zinc-500">a</span>
+                  <input
+                    type="time"
+                    defaultValue={d.end_time.slice(0, 5)}
+                    onBlur={(e) => updateDay(d, { end_time: e.target.value })}
+                    className="rounded-md border border-zinc-300 px-2 py-1 text-xs"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       <Card>
