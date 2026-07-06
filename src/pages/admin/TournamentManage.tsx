@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, CalendarClock, RefreshCw, Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Tournament, TournamentDay } from "@/lib/types";
-import { buildSchedule } from "@/lib/tournament-logic";
+import { buildSchedule, slotKey } from "@/lib/tournament-logic";
 import { todayStr } from "@/lib/format";
 import { DayGrid } from "@/components/DayGrid";
 import { Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
@@ -105,13 +105,19 @@ export function TournamentManage() {
     await saveMatchMinutes();
 
     const categoryOrder = new Map(categories.map((c, i) => [c.id, i]));
-    const { data: matches } = await supabase
-      .from("matches")
-      .select("*, zone:zones(position)")
-      .in("category_id", categories.map((c) => c.id))
-      .is("scheduled_at", null)
-      .not("team1_id", "is", null)
-      .not("team2_id", "is", null);
+    const categoryIds = categories.map((c) => c.id);
+    const [{ data: matches }, { data: scheduled }] = await Promise.all([
+      supabase
+        .from("matches")
+        .select("*, zone:zones(position)")
+        .in("category_id", categoryIds)
+        .is("scheduled_at", null)
+        .not("team1_id", "is", null)
+        .not("team2_id", "is", null),
+      // Partidos que ya tienen cancha+horario (de una corrida anterior u otra categoría),
+      // para no volver a repartir esos mismos turnos y terminar con dos partidos pisados.
+      supabase.from("matches").select("court_id, scheduled_at").in("category_id", categoryIds).not("scheduled_at", "is", null),
+    ]);
 
     const pending = (matches ?? []).sort((a, b) => {
       const catDiff = (categoryOrder.get(a.category_id) ?? 0) - (categoryOrder.get(b.category_id) ?? 0);
@@ -128,11 +134,15 @@ export function TournamentManage() {
       return;
     }
 
+    const occupiedSlots = new Set(
+      (scheduled ?? []).filter((m) => m.court_id && m.scheduled_at).map((m) => slotKey(m.court_id!, m.scheduled_at!)),
+    );
     const { assignments, unscheduledCount } = buildSchedule(
       pending.map((m) => m.id),
       courts.map((c) => c.id),
       [...days].sort((a, b) => a.date.localeCompare(b.date)).map((d) => ({ date: d.date, start_time: d.start_time, end_time: d.end_time })),
       Math.max(15, Number(matchMinutes) || 60),
+      occupiedSlots,
     );
     for (const a of assignments) {
       await supabase.from("matches").update({ court_id: a.courtId, scheduled_at: a.scheduledAt }).eq("id", a.matchId);

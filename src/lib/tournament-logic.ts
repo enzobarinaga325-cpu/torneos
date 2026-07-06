@@ -235,18 +235,26 @@ function toDateTime(date: string, time: string): Date {
   return d;
 }
 
+/** Clave única de un turno cancha+horario, para detectar choques. */
+export function slotKey(courtId: string, scheduledAt: string): string {
+  return `${courtId}|${scheduledAt}`;
+}
+
 /**
  * Reparte partidos en cadena entre las canchas disponibles, día por día: dentro de cada
  * día arrancan a su `start_time`, una cancha por turno, avanzando `durationMinutes` en
  * cadena hasta llegar a `end_time` — ahí salta al próximo día. `matchIds` ya debe venir
- * en el orden en que se quieren agendar. Si no entran todos en los días cargados, los que
- * sobran quedan sin agendar (se informa cuántos en `unscheduledCount`).
+ * en el orden en que se quieren agendar. Salta cualquier turno que ya figure en
+ * `occupiedSlots` (partidos ya agendados de una corrida anterior), para no pisarlos. Si
+ * no entran todos en los días cargados, los que sobran quedan sin agendar (se informa
+ * cuántos en `unscheduledCount`).
  */
 export function buildSchedule(
   matchIds: string[],
   courtIds: string[],
   days: DayWindow[],
   durationMinutes: number,
+  occupiedSlots: Set<string> = new Set(),
 ): { assignments: ScheduleAssignment[]; unscheduledCount: number } {
   if (courtIds.length === 0 || matchIds.length === 0 || days.length === 0) {
     return { assignments: [], unscheduledCount: matchIds.length };
@@ -259,7 +267,8 @@ export function buildSchedule(
     while (t < end) {
       for (const courtId of courtIds) {
         if (t >= end) break;
-        slots.push({ courtId, scheduledAt: t.toISOString() });
+        const scheduledAt = t.toISOString();
+        if (!occupiedSlots.has(slotKey(courtId, scheduledAt))) slots.push({ courtId, scheduledAt });
       }
       t = new Date(t.getTime() + durationMinutes * 60000);
     }

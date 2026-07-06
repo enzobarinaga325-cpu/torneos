@@ -61,17 +61,26 @@ export function DayGrid({
               <tr key={t} className="border-t border-zinc-100">
                 <td className="p-2 font-mono font-medium text-zinc-600">{timeLabel(t)}</td>
                 {courts.map((c) => {
-                  const m = dayMatches.find((x) => x.scheduled_at === t && x.court_id === c.id);
-                  if (!m) return <td key={c.id} className="border-l border-zinc-100 p-2" />;
-                  const cat = categoriesById[m.category_id]?.name ?? "";
-                  const t1 = m.team1_id ? teamsById[m.team1_id]?.name ?? "?" : "—";
-                  const t2 = m.team2_id ? teamsById[m.team2_id]?.name ?? "?" : "—";
+                  // Normalmente hay un solo partido por cancha+horario; si hay más de uno
+                  // (quedó pisado de una corrida vieja de "Autocompletar horarios"), se
+                  // muestran todos para no ocultar ninguno mientras se corrige a mano.
+                  const cellMatches = dayMatches.filter((x) => x.scheduled_at === t && x.court_id === c.id);
+                  if (cellMatches.length === 0) return <td key={c.id} className="border-l border-zinc-100 p-2" />;
                   return (
                     <td key={c.id} className="border-l border-zinc-100 p-2 align-top">
-                      <div className="text-[10px] uppercase tracking-wide text-emerald-600">{cat}</div>
-                      <div className="font-medium">{t1}</div>
-                      <div className="text-zinc-400">vs</div>
-                      <div className="font-medium">{t2}</div>
+                      {cellMatches.map((m, i) => {
+                        const cat = categoriesById[m.category_id]?.name ?? "";
+                        const t1 = m.team1_id ? teamsById[m.team1_id]?.name ?? "?" : "—";
+                        const t2 = m.team2_id ? teamsById[m.team2_id]?.name ?? "?" : "—";
+                        return (
+                          <div key={m.id} className={i > 0 ? "mt-1.5 border-t border-amber-300 pt-1.5" : ""}>
+                            <div className="text-[10px] uppercase tracking-wide text-emerald-600">{cat}</div>
+                            <div className="font-medium">{t1}</div>
+                            <div className="text-zinc-400">vs</div>
+                            <div className="font-medium">{t2}</div>
+                          </div>
+                        );
+                      })}
                     </td>
                   );
                 })}
