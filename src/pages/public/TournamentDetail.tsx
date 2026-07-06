@@ -4,7 +4,7 @@ import { ArrowLeft, MapPin, Trophy, Clock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Tournament, Zone } from "@/lib/types";
 import { computeStandings, matchWinner } from "@/lib/tournament-logic";
-import { formatDateRange } from "@/lib/format";
+import { formatDateRange, todayStr } from "@/lib/format";
 import { useSiteBackground } from "@/lib/useSiteBackground";
 import { FixtureBracket } from "@/components/FixtureBracket";
 import { ZonesView } from "@/components/ZonesView";
@@ -59,7 +59,9 @@ export function TournamentDetail() {
           setAllTeams(allT ?? []);
           setAllMatches((allM as Match[]) ?? []);
           const dates = [...new Set((allM ?? []).map((m) => (m.scheduled_at as string).slice(0, 10)))].sort();
-          if (dates.length > 0) setSelectedDay(dates[0]);
+          const today = todayStr();
+          const preferred = dates.find((d) => d >= today) ?? dates[0];
+          if (preferred) setSelectedDay(preferred);
         }
       });
   }, [slug]);
@@ -122,7 +124,7 @@ export function TournamentDetail() {
             <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Grilla del día</h2>
             <Select value={selectedDay} onChange={(e) => setSelectedDay(e.target.value)} className="w-auto">
               {availableDays.map((d) => (
-                <option key={d} value={d}>{d}</option>
+                <option key={d} value={d}>{d}{d === todayStr() ? " (hoy)" : ""}</option>
               ))}
             </Select>
           </div>

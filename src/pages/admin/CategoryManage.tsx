@@ -175,14 +175,41 @@ export function CategoryManage() {
     load();
   }
 
-  async function updateMatchCourt(match: Match, courtId: string) {
-    await supabase.from("matches").update({ court_id: courtId || null }).eq("id", match.id);
+  /**
+   * Cambia la cancha y/o el horario de un partido. Si el destino ya lo ocupa OTRO
+   * partido (misma cancha + mismo horario, en cualquier categoría del torneo), ese
+   * otro partido pasa directamente a donde estaba este — se intercambian, no quedan
+   * dos partidos pisados en el mismo lugar.
+   */
+  async function updateMatchSlot(match: Match, patch: { court_id?: string | null; scheduled_at?: string | null }) {
+    const newCourtId = "court_id" in patch ? patch.court_id ?? null : match.court_id;
+    const newScheduledAt = "scheduled_at" in patch ? patch.scheduled_at ?? null : match.scheduled_at;
+
+    if (newCourtId && newScheduledAt) {
+      const { data: conflicts } = await supabase
+        .from("matches")
+        .select("id")
+        .eq("court_id", newCourtId)
+        .eq("scheduled_at", newScheduledAt)
+        .neq("id", match.id);
+      if (conflicts && conflicts.length > 0) {
+        await supabase
+          .from("matches")
+          .update({ court_id: match.court_id, scheduled_at: match.scheduled_at })
+          .eq("id", conflicts[0].id);
+      }
+    }
+
+    await supabase.from("matches").update({ court_id: newCourtId, scheduled_at: newScheduledAt }).eq("id", match.id);
     load();
   }
 
+  async function updateMatchCourt(match: Match, courtId: string) {
+    await updateMatchSlot(match, { court_id: courtId || null });
+  }
+
   async function updateMatchSchedule(match: Match, isoDatetime: string) {
-    await supabase.from("matches").update({ scheduled_at: isoDatetime || null }).eq("id", match.id);
-    load();
+    await updateMatchSlot(match, { scheduled_at: isoDatetime || null });
   }
 
   async function saveResult(match: Match, sets: Pick<Match, "set1_team1" | "set1_team2" | "set2_team1" | "set2_team2" | "set3_team1" | "set3_team2">) {

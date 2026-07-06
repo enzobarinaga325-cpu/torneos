@@ -4,6 +4,7 @@ import { ArrowLeft, CalendarClock, RefreshCw, Plus, Trash2 } from "lucide-react"
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Tournament, TournamentDay } from "@/lib/types";
 import { buildSchedule } from "@/lib/tournament-logic";
+import { todayStr } from "@/lib/format";
 import { DayGrid } from "@/components/DayGrid";
 import { Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
 
@@ -60,7 +61,8 @@ export function TournamentManage() {
       setSelectedGridDay((prev) => {
         if (prev) return prev;
         const dates = [...new Set((allM ?? []).map((m) => (m.scheduled_at as string).slice(0, 10)))].sort();
-        return dates[0] ?? "";
+        const today = todayStr();
+        return dates.find((d) => d >= today) ?? dates[0] ?? "";
       });
     }
   }
@@ -259,7 +261,7 @@ export function TournamentManage() {
             <h2 className="text-sm font-semibold">Grilla del día</h2>
             <Select value={selectedGridDay} onChange={(e) => setSelectedGridDay(e.target.value)} className="w-auto">
               {availableGridDays.map((d) => (
-                <option key={d} value={d}>{d}</option>
+                <option key={d} value={d}>{d}{d === todayStr() ? " (hoy)" : ""}</option>
               ))}
             </Select>
           </div>

@@ -1,7 +1,8 @@
 import { Download, Loader2 } from "lucide-react";
 import type { Category, Court, Match, Team } from "@/lib/types";
 import { useDownloadImage } from "@/lib/useDownloadImage";
-import { Button } from "./ui";
+import { todayStr } from "@/lib/format";
+import { Button, Badge } from "./ui";
 
 function timeLabel(iso: string): string {
   return new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
@@ -19,6 +20,7 @@ export function DayGrid({
   fileName: string;
 }) {
   const { ref, download, downloading } = useDownloadImage(fileName);
+  const isToday = date === todayStr();
 
   const dayMatches = matches.filter((m) => m.scheduled_at && m.scheduled_at.slice(0, 10) === date);
   const times = [...new Set(dayMatches.map((m) => m.scheduled_at as string))].sort();
@@ -36,6 +38,10 @@ export function DayGrid({
         </Button>
       </div>
       <div ref={ref} className="overflow-x-auto rounded-xl border border-zinc-200 bg-white p-4">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="text-sm font-semibold text-zinc-700">{date}</span>
+          {isToday && <Badge color="green">HOY</Badge>}
+        </div>
         <table className="w-full border-collapse text-xs">
           <thead>
             <tr>
