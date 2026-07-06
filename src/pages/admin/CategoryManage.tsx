@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Zone } from "@/lib/types";
 import { buildBracket, computeStandings, matchWinner, proposeZones, roundRobinPairs } from "@/lib/tournament-logic";
 import { FixtureBracket } from "@/components/FixtureBracket";
+import { ZonesView } from "@/components/ZonesView";
 import { Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
 
 type Tab = "equipos" | "zonas" | "fixture";
@@ -304,6 +305,11 @@ export function CategoryManage() {
                   {hasZoneMatches ? "Regenerar partidos de zona" : "Generar partidos de zona"}
                 </Button>
               </Card>
+
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-zinc-700">Vista para compartir</h3>
+                <ZonesView zones={zones} teams={teams} zoneMatches={zoneMatches} teamsById={teamsById} fileName={`zonas-${category.name}`} />
+              </div>
 
               {zones.map((zone) => {
                 const zoneTeamIds = teams.filter((t) => t.zone_id === zone.id).map((t) => t.id);

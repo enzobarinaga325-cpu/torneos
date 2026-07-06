@@ -7,7 +7,9 @@ import { computeStandings, matchWinner } from "@/lib/tournament-logic";
 import { formatDateRange } from "@/lib/format";
 import { useSiteBackground } from "@/lib/useSiteBackground";
 import { FixtureBracket } from "@/components/FixtureBracket";
-import { Spinner } from "@/components/ui";
+import { ZonesView } from "@/components/ZonesView";
+import { DayGrid } from "@/components/DayGrid";
+import { Select, Spinner } from "@/components/ui";
 
 function formatSchedule(iso: string | null): string | null {
   if (!iso) return null;
@@ -24,6 +26,9 @@ export function TournamentDetail() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [courts, setCourts] = useState<Court[]>([]);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [allTeams, setAllTeams] = useState<Team[]>([]);
+  const [allMatches, setAllMatches] = useState<Match[]>([]);
+  const [selectedDay, setSelectedDay] = useState<string>("");
   const backgroundStyle = useSiteBackground();
 
   useEffect(() => {
@@ -44,6 +49,18 @@ export function TournamentDetail() {
         setCategories(cats ?? []);
         setCourts(co ?? []);
         if (cats && cats.length > 0) setActiveCategory(cats[0].id);
+
+        if (cats && cats.length > 0) {
+          const categoryIds = cats.map((c) => c.id);
+          const [{ data: allT }, { data: allM }] = await Promise.all([
+            supabase.from("teams").select("*").in("category_id", categoryIds),
+            supabase.from("matches").select("*").in("category_id", categoryIds).not("scheduled_at", "is", null),
+          ]);
+          setAllTeams(allT ?? []);
+          setAllMatches((allM as Match[]) ?? []);
+          const dates = [...new Set((allM ?? []).map((m) => (m.scheduled_at as string).slice(0, 10)))].sort();
+          if (dates.length > 0) setSelectedDay(dates[0]);
+        }
       });
   }, [slug]);
 
@@ -64,6 +81,13 @@ export function TournamentDetail() {
   const courtsById = useMemo(() => Object.fromEntries(courts.map((c) => [c.id, c])), [courts]);
   const zoneMatches = matches.filter((m) => m.stage === "zona");
   const fixtureMatches = matches.filter((m) => m.stage === "fixture");
+
+  const allTeamsById = useMemo(() => Object.fromEntries(allTeams.map((t) => [t.id, t])), [allTeams]);
+  const categoriesById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories]);
+  const availableDays = useMemo(
+    () => [...new Set(allMatches.map((m) => (m.scheduled_at as string).slice(0, 10)))].sort(),
+    [allMatches],
+  );
 
   if (tournament === undefined) {
     return (
@@ -92,6 +116,27 @@ export function TournamentDetail() {
         {tournament.start_date && <p className="text-sm text-zinc-500">{formatDateRange(tournament.start_date, tournament.end_date)}</p>}
       </div>
 
+      {availableDays.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Grilla del día</h2>
+            <Select value={selectedDay} onChange={(e) => setSelectedDay(e.target.value)} className="w-auto">
+              {availableDays.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </Select>
+          </div>
+          <DayGrid
+            date={selectedDay}
+            matches={allMatches}
+            courts={courts}
+            teamsById={allTeamsById}
+            categoriesById={categoriesById}
+            fileName={`grilla-${tournament.slug}-${selectedDay}`}
+          />
+        </div>
+      )}
+
       {categories.length === 0 ? (
         <p className="text-sm text-zinc-500">Todavía no hay categorías cargadas.</p>
       ) : (
@@ -113,6 +158,13 @@ export function TournamentDetail() {
           ) : (
             <div className="flex flex-col gap-4">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Zonas</h2>
+              <ZonesView
+                zones={zones}
+                teams={teams}
+                zoneMatches={zoneMatches}
+                teamsById={teamsById}
+                fileName={`zonas-${tournament.slug}-${categories.find((c) => c.id === activeCategory)?.name ?? ""}`}
+              />
               {zones.map((zone) => {
                 const zoneTeamIds = teams.filter((t) => t.zone_id === zone.id).map((t) => t.id);
                 const standings = computeStandings(zoneTeamIds, zoneMatches.filter((m) => m.zone_id === zone.id));

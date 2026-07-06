@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, CalendarClock, RefreshCw, Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { Category, Court, Tournament, TournamentDay } from "@/lib/types";
+import type { Category, Court, Match, Team, Tournament, TournamentDay } from "@/lib/types";
 import { buildSchedule } from "@/lib/tournament-logic";
-import { Button, Card, Input, Label, Spinner } from "@/components/ui";
+import { DayGrid } from "@/components/DayGrid";
+import { Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
 
 /** Todas las fechas "YYYY-MM-DD" entre start y end, ambas incluidas. */
 function enumerateDates(start: string, end: string): string[] {
@@ -26,6 +27,9 @@ export function TournamentManage() {
   const [courts, setCourts] = useState<Court[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [days, setDays] = useState<TournamentDay[]>([]);
+  const [allTeams, setAllTeams] = useState<Team[]>([]);
+  const [allMatches, setAllMatches] = useState<Match[]>([]);
+  const [selectedGridDay, setSelectedGridDay] = useState("");
   const [courtName, setCourtName] = useState("");
   const [categoryName, setCategoryName] = useState("");
   const [matchMinutes, setMatchMinutes] = useState("60");
@@ -44,6 +48,21 @@ export function TournamentManage() {
     setCategories(cats ?? []);
     setDays(d ?? []);
     if (t) setMatchMinutes(String(t.default_match_minutes ?? 60));
+
+    if (cats && cats.length > 0) {
+      const categoryIds = cats.map((c) => c.id);
+      const [{ data: allT }, { data: allM }] = await Promise.all([
+        supabase.from("teams").select("*").in("category_id", categoryIds),
+        supabase.from("matches").select("*").in("category_id", categoryIds).not("scheduled_at", "is", null),
+      ]);
+      setAllTeams(allT ?? []);
+      setAllMatches((allM as Match[]) ?? []);
+      setSelectedGridDay((prev) => {
+        if (prev) return prev;
+        const dates = [...new Set((allM ?? []).map((m) => (m.scheduled_at as string).slice(0, 10)))].sort();
+        return dates[0] ?? "";
+      });
+    }
   }
 
   useEffect(() => {
@@ -155,6 +174,13 @@ export function TournamentManage() {
     load();
   }
 
+  const allTeamsById = useMemo(() => Object.fromEntries(allTeams.map((t) => [t.id, t])), [allTeams]);
+  const categoriesById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories]);
+  const availableGridDays = useMemo(
+    () => [...new Set(allMatches.map((m) => (m.scheduled_at as string).slice(0, 10)))].sort(),
+    [allMatches],
+  );
+
   if (tournament === undefined) {
     return (
       <div className="flex h-40 items-center justify-center">
@@ -226,6 +252,27 @@ export function TournamentManage() {
           </div>
         )}
       </Card>
+
+      {availableGridDays.length > 0 && (
+        <Card>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold">Grilla del día</h2>
+            <Select value={selectedGridDay} onChange={(e) => setSelectedGridDay(e.target.value)} className="w-auto">
+              {availableGridDays.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </Select>
+          </div>
+          <DayGrid
+            date={selectedGridDay}
+            matches={allMatches}
+            courts={courts}
+            teamsById={allTeamsById}
+            categoriesById={categoriesById}
+            fileName={`grilla-${tournament.name}-${selectedGridDay}`}
+          />
+        </Card>
+      )}
 
       <Card>
         <h2 className="mb-3 text-sm font-semibold">Canchas</h2>
