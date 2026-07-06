@@ -155,6 +155,24 @@ export function TournamentManage() {
     load();
   }
 
+  /**
+   * Borra la cancha+horario de todos los partidos del torneo (los resultados ya cargados
+   * quedan intactos). Sirve para arrancar de cero antes de correr "Autocompletar horarios"
+   * con el algoritmo actual, si algún partido quedó mal agendado de una corrida vieja.
+   */
+  async function clearSchedule() {
+    if (categories.length === 0) return;
+    if (!confirm("¿Vaciar el horario y la cancha de TODOS los partidos de este torneo? Los resultados ya cargados no se tocan.")) return;
+    setScheduling(true);
+    setError(null);
+    await supabase
+      .from("matches")
+      .update({ court_id: null, scheduled_at: null })
+      .in("category_id", categories.map((c) => c.id));
+    setScheduling(false);
+    load();
+  }
+
   async function addCourt(e: React.FormEvent) {
     e.preventDefault();
     if (!courtName.trim()) return;
@@ -228,6 +246,9 @@ export function TournamentManage() {
           </div>
           <Button variant="secondary" onClick={syncDays}>
             <RefreshCw className="h-3.5 w-3.5" /> Sincronizar días
+          </Button>
+          <Button variant="danger" onClick={clearSchedule} disabled={scheduling}>
+            <Trash2 className="h-3.5 w-3.5" /> Vaciar horarios
           </Button>
           <Button onClick={autoSchedule} disabled={scheduling}>
             <CalendarClock className="h-3.5 w-3.5" /> {scheduling ? "Agendando…" : "Autocompletar horarios"}
