@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, MapPin, Trophy, Clock } from "lucide-react";
+import { ArrowLeft, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Tournament, Zone } from "@/lib/types";
 import { computeStandings, matchWinner } from "@/lib/tournament-logic";
@@ -10,12 +10,6 @@ import { FixtureBracket } from "@/components/FixtureBracket";
 import { ZonesView } from "@/components/ZonesView";
 import { DayGrid } from "@/components/DayGrid";
 import { Select, Spinner } from "@/components/ui";
-
-function formatSchedule(iso: string | null): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  return d.toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
 
 export function TournamentDetail() {
   const { slug } = useParams<{ slug: string }>();
@@ -80,7 +74,6 @@ export function TournamentDetail() {
   }, [activeCategory]);
 
   const teamsById = useMemo(() => Object.fromEntries(teams.map((t) => [t.id, t])), [teams]);
-  const courtsById = useMemo(() => Object.fromEntries(courts.map((c) => [c.id, c])), [courts]);
   const zoneMatches = matches.filter((m) => m.stage === "zona");
   const fixtureMatches = matches.filter((m) => m.stage === "fixture");
 
@@ -135,6 +128,7 @@ export function TournamentDetail() {
             teamsById={allTeamsById}
             categoriesById={categoriesById}
             fileName={`grilla-${tournament.slug}-${selectedDay}`}
+            showDownload={false}
           />
         </div>
       )}
@@ -166,6 +160,7 @@ export function TournamentDetail() {
                 zoneMatches={zoneMatches}
                 teamsById={teamsById}
                 fileName={`zonas-${tournament.slug}-${categories.find((c) => c.id === activeCategory)?.name ?? ""}`}
+                showDownload={false}
               />
               {zones.map((zone) => {
                 const zoneTeamIds = teams.filter((t) => t.zone_id === zone.id).map((t) => t.id);
@@ -203,7 +198,7 @@ export function TournamentDetail() {
                     </div>
                     <div className="mt-3 flex flex-col gap-1.5">
                       {myMatches.map((m) => (
-                        <PublicMatchLine key={m.id} match={m} teamsById={teamsById} courtsById={courtsById} />
+                        <PublicMatchLine key={m.id} match={m} teamsById={teamsById} />
                       ))}
                     </div>
                   </div>
@@ -219,6 +214,7 @@ export function TournamentDetail() {
                 matches={fixtureMatches}
                 teamsById={teamsById}
                 fileName={`fixture-${tournament.slug}-${categories.find((c) => c.id === activeCategory)?.name ?? ""}`}
+                showDownload={false}
               />
             </div>
           )}
@@ -229,7 +225,8 @@ export function TournamentDetail() {
   );
 }
 
-function PublicMatchLine({ match, teamsById, courtsById }: { match: Match; teamsById: Record<string, Team>; courtsById: Record<string, Court> }) {
+/** Solo equipos y resultado — la cancha y el horario ya se ven arriba, en la grilla del día. */
+function PublicMatchLine({ match, teamsById }: { match: Match; teamsById: Record<string, Team> }) {
   const t1 = match.team1_id ? teamsById[match.team1_id]?.name ?? "?" : "—";
   const t2 = match.team2_id ? teamsById[match.team2_id]?.name ?? "?" : "—";
   const played = matchWinner(match) != null;
@@ -238,8 +235,6 @@ function PublicMatchLine({ match, teamsById, courtsById }: { match: Match; teams
     [match.set2_team1, match.set2_team2],
     [match.set3_team1, match.set3_team2],
   ].filter(([a, b]) => a != null && b != null) as [number, number][];
-  const schedule = formatSchedule(match.scheduled_at);
-  const court = match.court_id ? courtsById[match.court_id]?.name : null;
 
   if (!match.team1_id || !match.team2_id) {
     return <p className="text-xs text-zinc-400">{t1 !== "—" ? t1 : t2} — pase directo</p>;
@@ -255,20 +250,6 @@ function PublicMatchLine({ match, teamsById, courtsById }: { match: Match; teams
         <span className={match.winner_id === match.team2_id ? "font-semibold text-emerald-700" : ""}>{t2}</span>
         {played && <span className="font-mono text-xs">{sets.map(([, b]) => b).join(" ")}</span>}
       </div>
-      {(schedule || court) && (
-        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-zinc-400">
-          {schedule && (
-            <span className="flex items-center gap-0.5">
-              <Clock className="h-3 w-3" /> {schedule}
-            </span>
-          )}
-          {court && (
-            <span className="flex items-center gap-0.5">
-              <MapPin className="h-3 w-3" /> {court}
-            </span>
-          )}
-        </div>
-      )}
     </div>
   );
 }

@@ -6,24 +6,27 @@ import { Button } from "./ui";
 
 /** Vista prolija de las zonas (equipos + tabla de posiciones) lista para descargar y compartir. */
 export function ZonesView({
-  zones, teams, zoneMatches, teamsById, fileName,
+  zones, teams, zoneMatches, teamsById, fileName, showDownload = true,
 }: {
   zones: Zone[];
   teams: Team[];
   zoneMatches: Match[];
   teamsById: Record<string, Team>;
   fileName: string;
+  showDownload?: boolean;
 }) {
   const { ref, download, downloading } = useDownloadImage(fileName);
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex justify-end">
-        <Button variant="secondary" onClick={download} disabled={downloading}>
-          {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-          Descargar imagen
-        </Button>
-      </div>
+      {showDownload && (
+        <div className="flex justify-end">
+          <Button variant="secondary" onClick={download} disabled={downloading}>
+            {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            Descargar imagen
+          </Button>
+        </div>
+      )}
       <div ref={ref} className="rounded-xl border border-zinc-200 bg-white p-6">
         <div className="grid gap-4 sm:grid-cols-2">
           {zones.map((zone) => {

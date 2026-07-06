@@ -10,7 +10,7 @@ function timeLabel(iso: string): string {
 
 /** Grilla cancha x horario de todos los partidos agendados un día, para descargar y compartir. */
 export function DayGrid({
-  date, matches, courts, teamsById, categoriesById, fileName,
+  date, matches, courts, teamsById, categoriesById, fileName, showDownload = true,
 }: {
   date: string;
   matches: Match[];
@@ -18,6 +18,7 @@ export function DayGrid({
   teamsById: Record<string, Team>;
   categoriesById: Record<string, Category>;
   fileName: string;
+  showDownload?: boolean;
 }) {
   const { ref, download, downloading } = useDownloadImage(fileName);
   const isToday = date === todayStr();
@@ -31,12 +32,14 @@ export function DayGrid({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex justify-end">
-        <Button variant="secondary" onClick={download} disabled={downloading}>
-          {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-          Descargar imagen
-        </Button>
-      </div>
+      {showDownload && (
+        <div className="flex justify-end">
+          <Button variant="secondary" onClick={download} disabled={downloading}>
+            {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            Descargar imagen
+          </Button>
+        </div>
+      )}
       <div ref={ref} className="overflow-x-auto rounded-xl border border-zinc-200 bg-white p-4">
         <div className="mb-2 flex items-center gap-2">
           <span className="text-sm font-semibold text-zinc-700">{date}</span>

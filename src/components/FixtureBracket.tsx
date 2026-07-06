@@ -46,7 +46,14 @@ function Row({ name, score, won }: { name: string; score: string; won: boolean }
   );
 }
 
-export function FixtureBracket({ matches, teamsById, fileName }: { matches: Match[]; teamsById: Record<string, Team>; fileName: string }) {
+export function FixtureBracket({
+  matches, teamsById, fileName, showDownload = true,
+}: {
+  matches: Match[];
+  teamsById: Record<string, Team>;
+  fileName: string;
+  showDownload?: boolean;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
 
@@ -73,12 +80,14 @@ export function FixtureBracket({ matches, teamsById, fileName }: { matches: Matc
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex justify-end">
-        <Button variant="secondary" onClick={download} disabled={downloading}>
-          {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-          Descargar imagen
-        </Button>
-      </div>
+      {showDownload && (
+        <div className="flex justify-end">
+          <Button variant="secondary" onClick={download} disabled={downloading}>
+            {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            Descargar imagen
+          </Button>
+        </div>
+      )}
       <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white p-6">
         <div ref={containerRef} className="inline-block bg-white p-4">
           {championId && teamsById[championId] && (
