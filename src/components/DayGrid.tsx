@@ -1,7 +1,7 @@
 import { Download, Loader2 } from "lucide-react";
 import type { Category, Court, Match, Team } from "@/lib/types";
 import { useDownloadImage } from "@/lib/useDownloadImage";
-import { todayStr } from "@/lib/format";
+import { localDateStr, todayStr } from "@/lib/format";
 import { Button, Badge } from "./ui";
 
 function timeLabel(iso: string): string {
@@ -23,7 +23,7 @@ export function DayGrid({
   const { ref, download, downloading } = useDownloadImage(fileName);
   const isToday = date === todayStr();
 
-  const dayMatches = matches.filter((m) => m.scheduled_at && m.scheduled_at.slice(0, 10) === date);
+  const dayMatches = matches.filter((m) => m.scheduled_at && localDateStr(m.scheduled_at) === date);
   const times = [...new Set(dayMatches.map((m) => m.scheduled_at as string))].sort();
 
   if (dayMatches.length === 0) {

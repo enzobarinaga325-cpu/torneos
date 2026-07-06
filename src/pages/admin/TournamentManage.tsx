@@ -4,7 +4,7 @@ import { ArrowLeft, CalendarClock, RefreshCw, Plus, Trash2 } from "lucide-react"
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Tournament, TournamentDay } from "@/lib/types";
 import { buildSchedule } from "@/lib/tournament-logic";
-import { todayStr } from "@/lib/format";
+import { localDateStr, todayStr } from "@/lib/format";
 import { DayGrid } from "@/components/DayGrid";
 import { Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
 
@@ -60,7 +60,7 @@ export function TournamentManage() {
       setAllMatches((allM as Match[]) ?? []);
       setSelectedGridDay((prev) => {
         if (prev) return prev;
-        const dates = [...new Set((allM ?? []).map((m) => (m.scheduled_at as string).slice(0, 10)))].sort();
+        const dates = [...new Set((allM ?? []).map((m) => localDateStr(m.scheduled_at as string)))].sort();
         const today = todayStr();
         return dates.find((d) => d >= today) ?? dates[0] ?? "";
       });
@@ -208,7 +208,7 @@ export function TournamentManage() {
   const allTeamsById = useMemo(() => Object.fromEntries(allTeams.map((t) => [t.id, t])), [allTeams]);
   const categoriesById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories]);
   const availableGridDays = useMemo(
-    () => [...new Set(allMatches.map((m) => (m.scheduled_at as string).slice(0, 10)))].sort(),
+    () => [...new Set(allMatches.map((m) => localDateStr(m.scheduled_at as string)))].sort(),
     [allMatches],
   );
 

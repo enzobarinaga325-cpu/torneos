@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Tournament, Zone } from "@/lib/types";
-import { formatDateRange, todayStr } from "@/lib/format";
+import { formatDateRange, localDateStr, todayStr } from "@/lib/format";
 import { useSiteBackground } from "@/lib/useSiteBackground";
 import { FixtureBracket } from "@/components/FixtureBracket";
 import { ZonesView } from "@/components/ZonesView";
@@ -51,7 +51,7 @@ export function TournamentDetail() {
           ]);
           setAllTeams(allT ?? []);
           setAllMatches((allM as Match[]) ?? []);
-          const dates = [...new Set((allM ?? []).map((m) => (m.scheduled_at as string).slice(0, 10)))].sort();
+          const dates = [...new Set((allM ?? []).map((m) => localDateStr(m.scheduled_at as string)))].sort();
           const today = todayStr();
           const preferred = dates.find((d) => d >= today) ?? dates[0];
           if (preferred) setSelectedDay(preferred);
@@ -79,7 +79,7 @@ export function TournamentDetail() {
   const allTeamsById = useMemo(() => Object.fromEntries(allTeams.map((t) => [t.id, t])), [allTeams]);
   const categoriesById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories]);
   const availableDays = useMemo(
-    () => [...new Set(allMatches.map((m) => (m.scheduled_at as string).slice(0, 10)))].sort(),
+    () => [...new Set(allMatches.map((m) => localDateStr(m.scheduled_at as string)))].sort(),
     [allMatches],
   );
 
