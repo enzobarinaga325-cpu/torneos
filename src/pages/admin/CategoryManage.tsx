@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Plus, Shuffle, Trash2, Trophy } from "lucide-react";
+import { ArrowLeft, Pencil, Plus, Shuffle, Trash2, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Zone } from "@/lib/types";
 import { buildBracket, computeStandings, matchWinner, proposeZones, roundRobinPairs } from "@/lib/tournament-logic";
@@ -20,6 +20,8 @@ export function CategoryManage() {
   const [tab, setTab] = useState<Tab>("equipos");
 
   const [teamName, setTeamName] = useState("");
+  const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
+  const [editingTeamName, setEditingTeamName] = useState("");
   const [teamsPerZone, setTeamsPerZone] = useState("4");
   const [qualifiersPerZone, setQualifiersPerZone] = useState("2");
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +67,19 @@ export function CategoryManage() {
   async function deleteTeam(teamId: string) {
     if (!confirm("¿Borrar este equipo? Si ya tiene partidos cargados, se van a borrar también.")) return;
     await supabase.from("teams").delete().eq("id", teamId);
+    load();
+  }
+
+  function startEditTeam(team: Team) {
+    setEditingTeamId(team.id);
+    setEditingTeamName(team.name);
+  }
+
+  async function saveTeamName(teamId: string) {
+    const name = editingTeamName.trim();
+    if (!name) return;
+    await supabase.from("teams").update({ name }).eq("id", teamId);
+    setEditingTeamId(null);
     load();
   }
 
@@ -292,24 +307,47 @@ export function CategoryManage() {
               <div className="flex flex-col gap-1.5">
                 {teams.map((team) => (
                   <div key={team.id} className="flex items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2">
-                    <span className="text-sm">{team.name}</span>
-                    <div className="flex items-center gap-2">
-                      {zones.length > 0 && (
-                        <select
-                          value={team.zone_id ?? ""}
-                          onChange={(e) => assignZone(team.id, e.target.value)}
-                          className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs"
-                        >
-                          <option value="">Sin zona</option>
-                          {zones.map((z) => (
-                            <option key={z.id} value={z.id}>{z.name}</option>
-                          ))}
-                        </select>
-                      )}
-                      <button onClick={() => deleteTeam(team.id)} className="rounded-md p-1.5 text-red-600 hover:bg-zinc-100" aria-label={`Borrar ${team.name}`}>
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
+                    {editingTeamId === team.id ? (
+                      <form
+                        className="flex flex-1 items-center gap-2"
+                        onSubmit={(e) => { e.preventDefault(); saveTeamName(team.id); }}
+                      >
+                        <Input
+                          autoFocus
+                          value={editingTeamName}
+                          onChange={(e) => setEditingTeamName(e.target.value)}
+                          className="h-7 py-1 text-sm"
+                        />
+                        <Button type="submit" className="px-2 py-1 text-xs">Guardar</Button>
+                        <Button type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={() => setEditingTeamId(null)}>
+                          Cancelar
+                        </Button>
+                      </form>
+                    ) : (
+                      <>
+                        <span className="text-sm">{team.name}</span>
+                        <div className="flex items-center gap-2">
+                          {zones.length > 0 && (
+                            <select
+                              value={team.zone_id ?? ""}
+                              onChange={(e) => assignZone(team.id, e.target.value)}
+                              className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs"
+                            >
+                              <option value="">Sin zona</option>
+                              {zones.map((z) => (
+                                <option key={z.id} value={z.id}>{z.name}</option>
+                              ))}
+                            </select>
+                          )}
+                          <button onClick={() => startEditTeam(team)} className="rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100" aria-label={`Editar ${team.name}`}>
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => deleteTeam(team.id)} className="rounded-md p-1.5 text-red-600 hover:bg-zinc-100" aria-label={`Borrar ${team.name}`}>
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>

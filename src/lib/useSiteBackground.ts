@@ -16,7 +16,7 @@ export function useSiteBackground(): CSSProperties | undefined {
 
   if (!url) return undefined;
   return {
-    backgroundImage: `linear-gradient(rgba(244,244,245,0.9), rgba(244,244,245,0.9)), url(${url})`,
+    backgroundImage: `linear-gradient(rgba(244,244,245,0.35), rgba(244,244,245,0.35)), url(${url})`,
     backgroundSize: "cover",
     backgroundPosition: "center",
     backgroundAttachment: "fixed",
