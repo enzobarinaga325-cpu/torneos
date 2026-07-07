@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Pencil, Plus, Shuffle, Trash2, Trophy } from "lucide-react";
+import { ArrowLeft, Banknote, Landmark, Pencil, Plus, Shuffle, Trash2, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Zone } from "@/lib/types";
 import { buildBracket, computeStandings, matchWinner, proposeZones, roundRobinPairs } from "@/lib/tournament-logic";
+import { autoScheduleTournament } from "@/lib/autoschedule";
 import { FixtureBracket } from "@/components/FixtureBracket";
 import { ZonesView } from "@/components/ZonesView";
 import { Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
 
-type Tab = "equipos" | "zonas" | "fixture";
+type Tab = "equipos" | "inscripciones" | "zonas" | "fixture";
 
 export function CategoryManage() {
   const { id: tournamentId, categoryId } = useParams<{ id: string; categoryId: string }>();
@@ -83,6 +84,13 @@ export function CategoryManage() {
     load();
   }
 
+  /** Tocar el método ya marcado lo destilda (vuelve a "no pagado"); tocar el otro lo cambia. */
+  async function togglePayment(team: Team, method: "efectivo" | "transferencia") {
+    const next = team.payment_method === method ? null : method;
+    await supabase.from("teams").update({ payment_method: next }).eq("id", team.id);
+    load();
+  }
+
   async function assignZone(teamId: string, zoneId: string) {
     await supabase.from("teams").update({ zone_id: zoneId || null }).eq("id", teamId);
     load();
@@ -132,6 +140,9 @@ export function CategoryManage() {
         })),
       );
     }
+    // Los partidos de zona ya nacen con las dos parejas conocidas, así que se pueden
+    // agendar de una sin esperar a que el admin apriete "Autocompletar horarios".
+    await autoScheduleTournament(tournamentId!);
     setBusy(false);
     load();
   }
@@ -180,6 +191,9 @@ export function CategoryManage() {
       if (!realId || !nextRealId) continue;
       await supabase.from("matches").update({ next_match_id: nextRealId, next_match_slot: m.nextSlot }).eq("id", realId);
     }
+    // La primera ronda ya tiene las dos parejas conocidas (vienen de las zonas): se agenda
+    // de una. Las rondas siguientes se van agendando solas a medida que se cargan resultados.
+    await autoScheduleTournament(tournamentId!);
     setBusy(false);
     load();
   }
@@ -237,6 +251,10 @@ export function CategoryManage() {
         .from("matches")
         .update(match.next_match_slot === 1 ? { team1_id: winner_id } : { team2_id: winner_id })
         .eq("id", match.next_match_id);
+      // Si con este resultado la próxima ronda quedó con las dos parejas definidas
+      // (el otro cruce ya se había jugado), se agenda sola, sin esperar a que el
+      // admin vuelva a apretar "Autocompletar horarios".
+      await autoScheduleTournament(tournamentId!);
     }
     load();
   }
@@ -262,7 +280,7 @@ export function CategoryManage() {
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="flex gap-1 rounded-lg bg-zinc-100 p-1 text-sm w-fit">
-        {(["equipos", "zonas", "fixture"] as Tab[]).map((tKey) => (
+        {(["equipos", "inscripciones", "zonas", "fixture"] as Tab[]).map((tKey) => (
           <button
             key={tKey}
             onClick={() => setTab(tKey)}
@@ -354,6 +372,43 @@ export function CategoryManage() {
             )}
           </Card>
         </div>
+      )}
+
+      {tab === "inscripciones" && (
+        <Card>
+          <h2 className="mb-3 text-sm font-semibold">
+            Inscripciones · {teams.filter((t) => t.payment_method).length}/{teams.length} pagaron
+          </h2>
+          {teams.length === 0 ? (
+            <p className="text-xs text-zinc-500">Todavía no cargaste equipos.</p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {teams.map((team) => (
+                <div key={team.id} className="flex items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2">
+                  <span className="text-sm">{team.name}</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => togglePayment(team, "efectivo")}
+                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ${
+                        team.payment_method === "efectivo" ? "bg-emerald-600 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                      }`}
+                    >
+                      <Banknote className="h-3.5 w-3.5" /> Efectivo
+                    </button>
+                    <button
+                      onClick={() => togglePayment(team, "transferencia")}
+                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ${
+                        team.payment_method === "transferencia" ? "bg-emerald-600 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                      }`}
+                    >
+                      <Landmark className="h-3.5 w-3.5" /> Transferencia
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
       )}
 
       {tab === "zonas" && (

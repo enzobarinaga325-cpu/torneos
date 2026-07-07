@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, CalendarClock, RefreshCw, Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Tournament, TournamentDay } from "@/lib/types";
-import { buildSchedule } from "@/lib/tournament-logic";
+import { autoScheduleTournament } from "@/lib/autoschedule";
 import { localDateStr, todayStr } from "@/lib/format";
 import { DayGrid } from "@/components/DayGrid";
 import { Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
@@ -104,53 +104,14 @@ export function TournamentManage() {
     setError(null);
     await saveMatchMinutes();
 
-    const categoryOrder = new Map(categories.map((c, i) => [c.id, i]));
-    const categoryIds = categories.map((c) => c.id);
-    const [{ data: matches }, { data: scheduled }] = await Promise.all([
-      supabase
-        .from("matches")
-        .select("*, zone:zones(position)")
-        .in("category_id", categoryIds)
-        .is("scheduled_at", null)
-        .not("team1_id", "is", null)
-        .not("team2_id", "is", null),
-      // Partidos que ya tienen cancha+horario (de una corrida anterior u otra categoría):
-      // sus turnos no se reparten de nuevo, y sus equipos también cuentan para el descanso.
-      supabase
-        .from("matches")
-        .select("court_id, scheduled_at, team1_id, team2_id")
-        .in("category_id", categoryIds)
-        .not("scheduled_at", "is", null),
-    ]);
-
-    const pending = (matches ?? []).sort((a, b) => {
-      const catDiff = (categoryOrder.get(a.category_id) ?? 0) - (categoryOrder.get(b.category_id) ?? 0);
-      if (catDiff !== 0) return catDiff;
-      if (a.stage !== b.stage) return a.stage === "zona" ? -1 : 1;
-      const zoneDiff = (a.zone?.position ?? 0) - (b.zone?.position ?? 0);
-      if (zoneDiff !== 0) return zoneDiff;
-      return (a.round_order ?? 0) - (b.round_order ?? 0) || a.position - b.position;
-    });
-
-    if (pending.length === 0) {
-      setScheduling(false);
-      setError("No hay partidos pendientes de horario (o ya están todos agendados).");
-      return;
-    }
-
-    const { assignments, unscheduledCount } = buildSchedule(
-      pending.map((m) => ({ id: m.id, team1_id: m.team1_id, team2_id: m.team2_id })),
-      courts.map((c) => c.id),
-      [...days].sort((a, b) => a.date.localeCompare(b.date)).map((d) => ({ date: d.date, start_time: d.start_time, end_time: d.end_time })),
-      Math.max(15, Number(matchMinutes) || 60),
-      (scheduled ?? []).filter((m): m is typeof m & { court_id: string; scheduled_at: string } => !!m.court_id && !!m.scheduled_at),
-    );
-    for (const a of assignments) {
-      await supabase.from("matches").update({ court_id: a.courtId, scheduled_at: a.scheduledAt }).eq("id", a.matchId);
-    }
+    const { scheduled, unscheduled, error: schedError } = await autoScheduleTournament(id!);
     setScheduling(false);
-    if (unscheduledCount > 0) {
-      setError(`Se agendaron ${assignments.length} partidos. No entraron ${unscheduledCount} más: agregá más días o extendé los horarios.`);
+    if (schedError) {
+      setError(schedError);
+    } else if (scheduled === 0 && unscheduled === 0) {
+      setError("No hay partidos pendientes de horario (o ya están todos agendados).");
+    } else if (unscheduled > 0) {
+      setError(`Se agendaron ${scheduled} partidos. No entraron ${unscheduled} más: agregá más días o extendé los horarios.`);
     }
     load();
   }

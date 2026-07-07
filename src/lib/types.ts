@@ -45,6 +45,7 @@ export type Team = {
   category_id: string;
   name: string;
   zone_id: string | null;
+  payment_method: "efectivo" | "transferencia" | null;
   created_at: string;
 };
 
