@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, CalendarClock, RefreshCw, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, CalendarClock, CheckCircle2, RefreshCw, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Tournament, TournamentDay } from "@/lib/types";
 import { autoScheduleTournament } from "@/lib/autoschedule";
 import { localDateStr, todayStr } from "@/lib/format";
 import { DayGrid } from "@/components/DayGrid";
-import { Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
+
+const statusLabels: Record<string, { label: string; color: "zinc" | "green" | "amber" }> = {
+  armando: { label: "Armando", color: "amber" },
+  en_curso: { label: "En curso", color: "green" },
+  finalizado: { label: "Finalizado", color: "zinc" },
+};
 
 /** Todas las fechas "YYYY-MM-DD" entre start y end, ambas incluidas. */
 function enumerateDates(start: string, end: string): string[] {
@@ -134,6 +140,17 @@ export function TournamentManage() {
     load();
   }
 
+  /**
+   * Cambia el estado del torneo a mano. "Finalizado" no chequea que estén todos los
+   * partidos jugados — a veces hay que cerrar el torneo igual (walkover, clima, etc.) aunque
+   * queden partidos sin jugar.
+   */
+  async function setTournamentStatus(status: "armando" | "en_curso" | "finalizado") {
+    if (status === "finalizado" && !confirm("¿Dar el torneo por finalizado? Podés reabrirlo después si hace falta.")) return;
+    await supabase.from("tournaments").update({ status }).eq("id", id!);
+    setTournament((t) => (t ? { ...t, status } : t));
+  }
+
   async function addCourt(e: React.FormEvent) {
     e.preventDefault();
     if (!courtName.trim()) return;
@@ -184,11 +201,32 @@ export function TournamentManage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <Link to="/admin" className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-900">
-          <ArrowLeft className="h-3.5 w-3.5" /> Torneos
-        </Link>
-        <h1 className="mt-1 text-lg font-semibold">{tournament.name}</h1>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <Link to="/admin" className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-900">
+            <ArrowLeft className="h-3.5 w-3.5" /> Torneos
+          </Link>
+          <div className="mt-1 flex items-center gap-2">
+            <h1 className="text-lg font-semibold">{tournament.name}</h1>
+            <Badge color={statusLabels[tournament.status].color}>{statusLabels[tournament.status].label}</Badge>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {tournament.status === "armando" && (
+            <Button variant="secondary" onClick={() => setTournamentStatus("en_curso")}>
+              Marcar en curso
+            </Button>
+          )}
+          {tournament.status !== "finalizado" ? (
+            <Button variant="secondary" onClick={() => setTournamentStatus("finalizado")}>
+              <CheckCircle2 className="h-3.5 w-3.5" /> Finalizar torneo
+            </Button>
+          ) : (
+            <Button variant="secondary" onClick={() => setTournamentStatus("en_curso")}>
+              <RotateCcw className="h-3.5 w-3.5" /> Reabrir
+            </Button>
+          )}
+        </div>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

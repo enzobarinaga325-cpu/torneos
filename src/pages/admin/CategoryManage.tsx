@@ -209,26 +209,68 @@ export function CategoryManage() {
    * partido (misma cancha + mismo horario, en cualquier categoría del torneo), ese
    * otro partido pasa directamente a donde estaba este — se intercambian, no quedan
    * dos partidos pisados en el mismo lugar.
+   *
+   * Antes de mover nada, chequea que ninguno de los dos equipos de este partido quede con
+   * dos partidos a la misma hora en canchas distintas (un cruce real: el equipo no puede
+   * estar en dos lados a la vez) — puede pasar aunque la cancha+hora destino esté libre,
+   * si ese equipo juega otra categoría. Si hay cruce, no se mueve nada y se avisa.
    */
   async function updateMatchSlot(match: Match, patch: { court_id?: string | null; scheduled_at?: string | null }) {
     const newCourtId = "court_id" in patch ? patch.court_id ?? null : match.court_id;
     const newScheduledAt = "scheduled_at" in patch ? patch.scheduled_at ?? null : match.scheduled_at;
 
     if (newCourtId && newScheduledAt) {
-      const { data: conflicts } = await supabase
-        .from("matches")
-        .select("id")
-        .eq("court_id", newCourtId)
-        .eq("scheduled_at", newScheduledAt)
-        .neq("id", match.id);
-      if (conflicts && conflicts.length > 0) {
+      const teamIds = [match.team1_id, match.team2_id].filter((tid): tid is string => !!tid);
+
+      const { data: sameTime } = teamIds.length > 0
+        ? await supabase
+            .from("matches")
+            .select("id, court_id, team1_id, team2_id")
+            .eq("scheduled_at", newScheduledAt)
+            .neq("id", match.id)
+            .or(teamIds.flatMap((tid) => [`team1_id.eq.${tid}`, `team2_id.eq.${tid}`]).join(","))
+        : { data: [] };
+
+      const occupant = (sameTime ?? []).find((m) => m.court_id === newCourtId);
+      // Cualquier otro partido de estos equipos a esa hora, en OTRA cancha, es un cruce real
+      // y no se arregla intercambiando lugares — hay que elegir otro horario.
+      const teamClash = (sameTime ?? []).find((m) => m.id !== occupant?.id);
+      if (teamClash) {
+        setError("Uno de estos dos equipos ya tiene otro partido agendado a esa misma hora — elegí otro horario o cancha.");
+        return;
+      }
+
+      if (occupant) {
+        // Si este partido ya tenía un lugar antes (no es la primera vez que se agenda), hay
+        // que asegurarse de que mandar al que ocupaba el destino hacia ESE lugar viejo
+        // tampoco cruce a sus propios equipos con otro partido que ya tengan justo ahí.
+        // Si el partido no tenía lugar viejo (se está agendando por primera vez), el que
+        // ocupaba el destino simplemente queda sin horario — no hay "lugar viejo" que
+        // chequear ni adonde moverlo.
+        if (match.scheduled_at) {
+          const occupantTeamIds = [occupant.team1_id, occupant.team2_id].filter((tid): tid is string => !!tid);
+          const { data: occupantClash } = occupantTeamIds.length > 0
+            ? await supabase
+                .from("matches")
+                .select("id")
+                .eq("scheduled_at", match.scheduled_at)
+                .neq("id", occupant.id)
+                .neq("id", match.id)
+                .or(occupantTeamIds.flatMap((tid) => [`team1_id.eq.${tid}`, `team2_id.eq.${tid}`]).join(","))
+            : { data: [] };
+          if (occupantClash && occupantClash.length > 0) {
+            setError("No se puede intercambiar: el partido que ocupa ese lugar tiene un equipo que ya juega a la hora anterior de este partido.");
+            return;
+          }
+        }
         await supabase
           .from("matches")
           .update({ court_id: match.court_id, scheduled_at: match.scheduled_at })
-          .eq("id", conflicts[0].id);
+          .eq("id", occupant.id);
       }
     }
 
+    setError(null);
     await supabase.from("matches").update({ court_id: newCourtId, scheduled_at: newScheduledAt }).eq("id", match.id);
     load();
   }
@@ -580,6 +622,11 @@ function MatchRow({
               {courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
             <input
+              // key por scheduled_at: si este horario cambia desde afuera (p. ej. porque se
+              // intercambió con otro partido al reagendar uno distinto), el input no es
+              // controlado (defaultValue), así que sin esto quedaría mostrando la hora vieja
+              // hasta recargar la página — parecía que el cambio "no se guardó".
+              key={match.scheduled_at ?? "sin-horario"}
               type="datetime-local"
               defaultValue={match.scheduled_at ? match.scheduled_at.slice(0, 16) : ""}
               onBlur={(e) => onScheduleChange(match, e.target.value ? new Date(e.target.value).toISOString() : "")}
