@@ -30,6 +30,7 @@ export async function autoScheduleTournament(tournamentId: string): Promise<Auto
       .from("matches")
       .select("*, zone:zones(position)")
       .in("category_id", categoryIds)
+      .neq("stage", "liga") // los partidos de liga se agendan aparte, por franjas semanales
       .is("scheduled_at", null)
       .not("team1_id", "is", null)
       .not("team2_id", "is", null),

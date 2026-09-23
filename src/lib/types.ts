@@ -1,4 +1,5 @@
 export type TournamentStatus = "armando" | "en_curso" | "finalizado";
+export type Modalidad = "torneo" | "liga";
 
 export type SiteSettings = {
   id: number;
@@ -15,6 +16,20 @@ export type Tournament = {
   default_match_minutes: number; // duración estándar de un partido, para armar los horarios en cadena
   status: TournamentStatus;
   published: boolean;
+  modalidad: Modalidad;
+  ida_vuelta: boolean; // solo aplica a modalidad "liga": todos contra todos dos veces
+  logo_url: string | null; // se muestra en el cartel semanal para Instagram, etc.
+  created_at: string;
+};
+
+/** Franja horaria semanal fija de UNA cancha de una liga (ej. "lunes, Cancha 1, 19:00 a 00:00"). */
+export type LeagueSlot = {
+  id: string;
+  tournament_id: string;
+  court_id: string;
+  dia_semana: number; // 0 = domingo .. 6 = sábado
+  hora_inicio: string; // "HH:MM:SS"
+  hora_fin: string; // "HH:MM:SS" — si es <= hora_inicio, la franja cruza la medianoche
   created_at: string;
 };
 
@@ -57,7 +72,7 @@ export type Zone = {
   created_at: string;
 };
 
-export type MatchStage = "zona" | "fixture";
+export type MatchStage = "zona" | "fixture" | "liga";
 
 export type Match = {
   id: string;

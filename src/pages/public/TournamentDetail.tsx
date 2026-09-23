@@ -4,9 +4,11 @@ import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Tournament, Zone } from "@/lib/types";
 import { formatDateRange, localDateStr, todayStr } from "@/lib/format";
+import { matchWinner } from "@/lib/tournament-logic";
 import { useSiteBackground } from "@/lib/useSiteBackground";
 import { FixtureBracket } from "@/components/FixtureBracket";
 import { ZonesView } from "@/components/ZonesView";
+import { LeagueStandings } from "@/components/LeagueStandings";
 import { DayGrid } from "@/components/DayGrid";
 import { Select, Spinner } from "@/components/ui";
 
@@ -73,8 +75,10 @@ export function TournamentDetail() {
   }, [activeCategory]);
 
   const teamsById = useMemo(() => Object.fromEntries(teams.map((t) => [t.id, t])), [teams]);
+  const isLiga = tournament?.modalidad === "liga";
   const zoneMatches = matches.filter((m) => m.stage === "zona");
   const fixtureMatches = matches.filter((m) => m.stage === "fixture");
+  const ligaMatches = matches.filter((m) => m.stage === "liga");
 
   const allTeamsById = useMemo(() => Object.fromEntries(allTeams.map((t) => [t.id, t])), [allTeams]);
   const categoriesById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories]);
@@ -148,32 +152,90 @@ export function TournamentDetail() {
             ))}
           </div>
 
-          {zones.length === 0 ? (
-            <p className="text-sm text-zinc-500">Todavía no se armaron las zonas de esta categoría.</p>
-          ) : (
+          {isLiga ? (
             <div className="flex flex-col gap-4">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Zonas</h2>
-              <ZonesView
-                zones={zones}
-                teams={teams}
-                zoneMatches={zoneMatches}
-                teamsById={teamsById}
-                fileName={`zonas-${tournament.slug}-${categories.find((c) => c.id === activeCategory)?.name ?? ""}`}
-                showDownload={false}
-              />
-            </div>
-          )}
+              <div>
+                <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Tabla de posiciones</h2>
+                <LeagueStandings
+                  teamIds={teams.map((t) => t.id)}
+                  matches={ligaMatches}
+                  teamsById={teamsById}
+                  fileName={`posiciones-${tournament.slug}-${categories.find((c) => c.id === activeCategory)?.name ?? ""}`}
+                  showDownload={false}
+                />
+              </div>
 
-          {fixtureMatches.length > 0 && (
-            <div className="flex flex-col gap-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Fixture</h2>
-              <FixtureBracket
-                matches={fixtureMatches}
-                teamsById={teamsById}
-                fileName={`fixture-${tournament.slug}-${categories.find((c) => c.id === activeCategory)?.name ?? ""}`}
-                showDownload={false}
-              />
+              {ligaMatches.length > 0 && (
+                <div>
+                  <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Fixture por jornada</h2>
+                  <div className="flex flex-col gap-3">
+                    {[...new Set(ligaMatches.map((m) => m.round_order))].sort((a, b) => (a ?? 0) - (b ?? 0)).map((ro) => {
+                      const roundMatches = ligaMatches.filter((m) => m.round_order === ro);
+                      return (
+                        <div key={ro} className="rounded-xl border border-zinc-200 bg-white p-4">
+                          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">{roundMatches[0]?.round_name}</h3>
+                          <div className="flex flex-col gap-2">
+                            {roundMatches.map((m) => {
+                              const winner = matchWinner(m);
+                              return (
+                                <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-sm">
+                                  <div className="flex flex-1 items-center justify-between gap-2 min-w-[180px]">
+                                    <span className={winner === 1 ? "font-semibold text-emerald-700" : ""}>
+                                      {teamsById[m.team1_id ?? ""]?.name ?? "?"}
+                                    </span>
+                                    <span className="text-xs text-zinc-400">vs</span>
+                                    <span className={winner === 2 ? "font-semibold text-emerald-700" : ""}>
+                                      {teamsById[m.team2_id ?? ""]?.name ?? "?"}
+                                    </span>
+                                  </div>
+                                  {m.scheduled_at && (
+                                    <span className="shrink-0 font-mono text-xs text-zinc-500">
+                                      {new Date(m.scheduled_at).toLocaleString("es-AR", {
+                                        weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+                                      })}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
+          ) : (
+            <>
+              {zones.length === 0 ? (
+                <p className="text-sm text-zinc-500">Todavía no se armaron las zonas de esta categoría.</p>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Zonas</h2>
+                  <ZonesView
+                    zones={zones}
+                    teams={teams}
+                    zoneMatches={zoneMatches}
+                    teamsById={teamsById}
+                    fileName={`zonas-${tournament.slug}-${categories.find((c) => c.id === activeCategory)?.name ?? ""}`}
+                    showDownload={false}
+                  />
+                </div>
+              )}
+
+              {fixtureMatches.length > 0 && (
+                <div className="flex flex-col gap-3">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Fixture</h2>
+                  <FixtureBracket
+                    matches={fixtureMatches}
+                    teamsById={teamsById}
+                    fileName={`fixture-${tournament.slug}-${categories.find((c) => c.id === activeCategory)?.name ?? ""}`}
+                    showDownload={false}
+                  />
+                </div>
+              )}
+            </>
           )}
         </>
       )}

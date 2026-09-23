@@ -1,12 +1,40 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, CalendarClock, CheckCircle2, RefreshCw, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, CalendarClock, CheckCircle2, Image as ImageIcon, RefreshCw, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { Category, Court, Match, Team, Tournament, TournamentDay } from "@/lib/types";
+import type { Category, Court, LeagueSlot, Match, Modalidad, Team, Tournament, TournamentDay } from "@/lib/types";
+import { matchWinner } from "@/lib/tournament-logic";
 import { autoScheduleTournament } from "@/lib/autoschedule";
+import { autoScheduleLeague } from "@/lib/league-autoschedule";
+import { uploadSiteImage } from "@/lib/images";
+import { DIAS_SEMANA } from "@/lib/league-logic";
 import { localDateStr, todayStr } from "@/lib/format";
 import { DayGrid } from "@/components/DayGrid";
+import { WeeklyFixtureStory } from "@/components/WeeklyFixtureStory";
 import { Badge, Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
+
+/** Lunes a domingo, para mostrarlos en el orden natural de la semana (día 0 = domingo). */
+const LEAGUE_DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
+/** Lunes ("YYYY-MM-DD") de la semana que contiene `dateStr`. */
+function mondayOf(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  const diff = (dt.getDay() + 6) % 7; // días desde el lunes de esa semana
+  dt.setDate(dt.getDate() - diff);
+  return localDateStr(dt);
+}
+
+/** Los 7 días ("YYYY-MM-DD") de lunes a domingo, a partir de un lunes. */
+function weekDatesFrom(mondayStr: string): string[] {
+  const [y, m, d] = mondayStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return Array.from({ length: 7 }, (_, i) => {
+    const day = new Date(dt);
+    day.setDate(dt.getDate() + i);
+    return localDateStr(day);
+  });
+}
 
 const statusLabels: Record<string, { label: string; color: "zinc" | "green" | "amber" }> = {
   armando: { label: "Armando", color: "amber" },
@@ -36,24 +64,30 @@ export function TournamentManage() {
   const [days, setDays] = useState<TournamentDay[]>([]);
   const [allTeams, setAllTeams] = useState<Team[]>([]);
   const [allMatches, setAllMatches] = useState<Match[]>([]);
+  const [leagueSlots, setLeagueSlots] = useState<LeagueSlot[]>([]);
   const [selectedGridDay, setSelectedGridDay] = useState("");
+  const [selectedWeek, setSelectedWeek] = useState("");
   const [courtName, setCourtName] = useState("");
   const [categoryName, setCategoryName] = useState("");
   const [matchMinutes, setMatchMinutes] = useState("60");
   const [scheduling, setScheduling] = useState(false);
+  const [pendingModalidad, setPendingModalidad] = useState<Modalidad | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    const [{ data: t }, { data: c }, { data: cats }, { data: d }] = await Promise.all([
+    const [{ data: t }, { data: c }, { data: cats }, { data: d }, { data: ls }] = await Promise.all([
       supabase.from("tournaments").select("*").eq("id", id!).maybeSingle(),
       supabase.from("courts").select("*").eq("tournament_id", id!).order("name"),
       supabase.from("categories").select("*").eq("tournament_id", id!).order("created_at"),
       supabase.from("tournament_days").select("*").eq("tournament_id", id!).order("date"),
+      supabase.from("horarios_liga").select("*").eq("tournament_id", id!),
     ]);
     setTournament(t ?? null);
     setCourts(c ?? []);
     setCategories(cats ?? []);
     setDays(d ?? []);
+    setLeagueSlots(ls ?? []);
     if (t) setMatchMinutes(String(t.default_match_minutes ?? 60));
 
     if (cats && cats.length > 0) {
@@ -64,12 +98,10 @@ export function TournamentManage() {
       ]);
       setAllTeams(allT ?? []);
       setAllMatches((allM as Match[]) ?? []);
-      setSelectedGridDay((prev) => {
-        if (prev) return prev;
-        const dates = [...new Set((allM ?? []).map((m) => localDateStr(m.scheduled_at as string)))].sort();
-        const today = todayStr();
-        return dates.find((d) => d >= today) ?? dates[0] ?? "";
-      });
+      const dates = [...new Set((allM ?? []).map((m) => localDateStr(m.scheduled_at as string)))].sort();
+      const today = todayStr();
+      setSelectedGridDay((prev) => prev || dates.find((d) => d >= today) || dates[0] || "");
+      setSelectedWeek((prev) => prev || mondayOf(dates.find((d) => d >= today) ?? dates[0] ?? today));
     }
   }
 
@@ -151,6 +183,123 @@ export function TournamentManage() {
     setTournament((t) => (t ? { ...t, status } : t));
   }
 
+  async function uploadLogo(file: File) {
+    setUploadingLogo(true);
+    setError(null);
+    try {
+      const url = await uploadSiteImage(file);
+      await supabase.from("tournaments").update({ logo_url: url }).eq("id", id!);
+      setTournament((t) => (t ? { ...t, logo_url: url } : t));
+    } catch (e) {
+      setError("No se pudo subir el logo: " + (e instanceof Error ? e.message : String(e)));
+    }
+    setUploadingLogo(false);
+  }
+
+  async function removeLogo() {
+    await supabase.from("tournaments").update({ logo_url: null }).eq("id", id!);
+    setTournament((t) => (t ? { ...t, logo_url: null } : t));
+  }
+
+  // ============ MODALIDAD ============
+  function requestModalidadChange(next: Modalidad) {
+    if (!tournament || next === tournament.modalidad) return;
+    setPendingModalidad(next);
+  }
+
+  /**
+   * Cambia la modalidad del torneo. Borra los partidos SIN resultado cargado de todas las
+   * categorías (de cualquier stage: zona, fixture o liga) para que se puedan regenerar con
+   * el botón que corresponda al nuevo formato — los partidos que ya tienen un resultado
+   * cargado nunca se tocan, sin importar la modalidad.
+   */
+  async function confirmModalidadChange() {
+    if (!pendingModalidad || !tournament) return;
+    setScheduling(true);
+    setError(null);
+    const categoryIds = categories.map((c) => c.id);
+    if (categoryIds.length > 0) {
+      const { data: existing } = await supabase.from("matches").select("*").in("category_id", categoryIds);
+      const unplayedIds = ((existing as Match[]) ?? []).filter((m) => matchWinner(m) == null).map((m) => m.id);
+      if (unplayedIds.length > 0) await supabase.from("matches").delete().in("id", unplayedIds);
+    }
+    await supabase.from("tournaments").update({ modalidad: pendingModalidad }).eq("id", id!);
+    setPendingModalidad(null);
+    setScheduling(false);
+    load();
+  }
+
+  // ============ HORARIOS DE LIGA (uno por cancha por día) ============
+  function leagueSlotFor(diaSemana: number, courtId: string): LeagueSlot | undefined {
+    return leagueSlots.find((s) => s.dia_semana === diaSemana && s.court_id === courtId);
+  }
+
+  /** Tildar un día crea de una un horario para CADA cancha (19 a 23hs por defecto, editable
+   *  después cancha por cancha); destildarlo borra los horarios de todas las canchas ese día. */
+  async function toggleLeagueDay(diaSemana: number, enabled: boolean) {
+    if (enabled) {
+      if (courts.length === 0) { setError("Cargá al menos una cancha primero."); return; }
+      await supabase.from("horarios_liga").insert(
+        courts.map((c) => ({ tournament_id: id, court_id: c.id, dia_semana: diaSemana, hora_inicio: "19:00", hora_fin: "23:00" })),
+      );
+    } else {
+      const existingIds = leagueSlots.filter((s) => s.dia_semana === diaSemana).map((s) => s.id);
+      if (existingIds.length > 0) await supabase.from("horarios_liga").delete().in("id", existingIds);
+    }
+    load();
+  }
+
+  async function toggleLeagueCourtDay(diaSemana: number, courtId: string, enabled: boolean) {
+    if (enabled) {
+      await supabase.from("horarios_liga").insert({ tournament_id: id, court_id: courtId, dia_semana: diaSemana, hora_inicio: "19:00", hora_fin: "23:00" });
+    } else {
+      const existing = leagueSlotFor(diaSemana, courtId);
+      if (existing) await supabase.from("horarios_liga").delete().eq("id", existing.id);
+    }
+    load();
+  }
+
+  async function updateLeagueSlot(slot: LeagueSlot, patch: Partial<Pick<LeagueSlot, "hora_inicio" | "hora_fin">>) {
+    await supabase.from("horarios_liga").update(patch).eq("id", slot.id);
+    setLeagueSlots((s) => s.map((x) => (x.id === slot.id ? { ...x, ...patch } : x)));
+  }
+
+  async function autoScheduleLeagueClick() {
+    if (courts.length === 0) { setError("Cargá al menos una cancha primero."); return; }
+    if (leagueSlots.length === 0) { setError("Cargá al menos un horario semanal de la liga primero."); return; }
+    if (!tournament?.start_date) { setError("Cargale una fecha de inicio al torneo primero (desde la lista de Torneos)."); return; }
+    if (categories.length === 0) return;
+    setScheduling(true);
+    setError(null);
+    await saveMatchMinutes();
+
+    const { scheduled, unscheduled, error: schedError } = await autoScheduleLeague(id!);
+    setScheduling(false);
+    if (schedError) {
+      setError(schedError);
+    } else if (scheduled === 0 && unscheduled === 0) {
+      setError("No hay partidos de liga pendientes de horario (o ya están todos agendados).");
+    } else if (unscheduled > 0) {
+      setError(`Se agendaron ${scheduled} partidos. No entraron ${unscheduled} más: agregá más horarios semanales o canchas.`);
+    }
+    load();
+  }
+
+  /** Borra la cancha+horario de todos los partidos de liga (los resultados no se tocan). */
+  async function clearLeagueSchedule() {
+    if (categories.length === 0) return;
+    if (!confirm("¿Vaciar el horario y la cancha de TODOS los partidos de liga de este torneo? Los resultados ya cargados no se tocan.")) return;
+    setScheduling(true);
+    setError(null);
+    await supabase
+      .from("matches")
+      .update({ court_id: null, scheduled_at: null })
+      .in("category_id", categories.map((c) => c.id))
+      .eq("stage", "liga");
+    setScheduling(false);
+    load();
+  }
+
   async function addCourt(e: React.FormEvent) {
     e.preventDefault();
     if (!courtName.trim()) return;
@@ -189,6 +338,10 @@ export function TournamentManage() {
     () => [...new Set(allMatches.map((m) => localDateStr(m.scheduled_at as string)))].sort(),
     [allMatches],
   );
+  const availableWeeks = useMemo(
+    () => [...new Set(availableGridDays.map(mondayOf))].sort(),
+    [availableGridDays],
+  );
 
   if (tournament === undefined) {
     return (
@@ -198,6 +351,8 @@ export function TournamentManage() {
     );
   }
   if (tournament === null) return <p className="text-sm text-zinc-500">No se encontró el torneo.</p>;
+
+  const isLiga = tournament.modalidad === "liga";
 
   return (
     <div className="flex flex-col gap-6">
@@ -231,6 +386,70 @@ export function TournamentManage() {
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
+      <Card className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold">Modalidad</h2>
+          <p className="text-xs text-zinc-500">Torneo: zonas + cuadro eliminatorio. Liga: todos contra todos con horarios semanales fijos.</p>
+        </div>
+        <Select value={tournament.modalidad} onChange={(e) => requestModalidadChange(e.target.value as Modalidad)} className="w-40">
+          <option value="torneo">Torneo</option>
+          <option value="liga">Liga</option>
+        </Select>
+      </Card>
+
+      <Card className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold">Logo</h2>
+          <p className="text-xs text-zinc-500">Aparece en el cartel semanal para Instagram y otras vistas para compartir.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {tournament.logo_url ? (
+            <img src={tournament.logo_url} alt="Logo" className="h-12 w-20 rounded-lg border border-zinc-200 object-contain bg-black" />
+          ) : (
+            <div className="flex h-12 w-20 items-center justify-center rounded-lg border border-dashed border-zinc-300 text-zinc-400">
+              <ImageIcon className="h-4 w-4" />
+            </div>
+          )}
+          <div className="flex flex-col gap-1">
+            <label className="cursor-pointer text-sm text-emerald-700 underline">
+              {uploadingLogo ? "Subiendo…" : tournament.logo_url ? "Cambiar logo" : "Subir logo"}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={uploadingLogo}
+                onChange={(e) => e.target.files?.[0] && uploadLogo(e.target.files[0])}
+              />
+            </label>
+            {tournament.logo_url && (
+              <button onClick={removeLogo} className="text-left text-sm text-zinc-500 underline">
+                Quitar logo
+              </button>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      {pendingModalidad && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={() => setPendingModalidad(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
+            <h2 className="mb-2 text-base font-semibold">Cambiar a modalidad "{pendingModalidad === "liga" ? "Liga" : "Torneo"}"</h2>
+            <p className="mb-4 text-sm text-zinc-600">
+              Se van a borrar todos los partidos de este torneo que todavía NO tengan resultado cargado, en todas las categorías. Los
+              partidos que ya tienen un resultado cargado no se tocan. Después vas a tener que generar de nuevo el fixture con el botón
+              que corresponda al nuevo formato, en cada categoría (pestaña {pendingModalidad === "liga" ? '"Liga"' : '"Zonas" / "Fixture"'}).
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setPendingModalidad(null)}>Cancelar</Button>
+              <Button variant="danger" onClick={confirmModalidadChange} disabled={scheduling}>
+                {scheduling ? "Cambiando…" : "Confirmar cambio"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!isLiga && (
       <Card>
         <h2 className="mb-1 text-sm font-semibold">Horarios</h2>
         <p className="mb-3 text-xs text-zinc-500">
@@ -285,6 +504,93 @@ export function TournamentManage() {
           </div>
         )}
       </Card>
+      )}
+
+      {isLiga && (
+      <Card>
+        <h2 className="mb-1 text-sm font-semibold">Horarios de la liga</h2>
+        <p className="mb-3 text-xs text-zinc-500">
+          Tildá los días en que se juega y elegí el horario CANCHA POR CANCHA — cada una puede tener su propia franja el mismo día. Si
+          cruza la medianoche (ej. termina a las 00:30), un partido de esa madrugada sigue perteneciendo a la jornada del día que empezó
+          la franja. "Autocompletar horarios" reparte los partidos semana a semana desde la fecha de inicio del torneo (se edita en la
+          lista de Torneos), sin que una pareja juegue dos partidos superpuestos ni más de uno por noche.
+        </p>
+
+        <div className="mb-3 flex flex-wrap items-end gap-3">
+          <div className="w-40">
+            <Label>Minutos por partido</Label>
+            <Input type="number" min={15} step={5} value={matchMinutes} onChange={(e) => setMatchMinutes(e.target.value)} onBlur={saveMatchMinutes} />
+          </div>
+          <Button variant="danger" onClick={clearLeagueSchedule} disabled={scheduling}>
+            <Trash2 className="h-3.5 w-3.5" /> Vaciar horarios
+          </Button>
+          <Button onClick={autoScheduleLeagueClick} disabled={scheduling}>
+            <CalendarClock className="h-3.5 w-3.5" /> {scheduling ? "Agendando…" : "Autocompletar horarios"}
+          </Button>
+        </div>
+
+        {courts.length === 0 ? (
+          <p className="text-xs text-zinc-500">Cargá al menos una cancha primero (más abajo, en "Canchas").</p>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {LEAGUE_DAY_ORDER.map((dow) => {
+              const dayEnabled = leagueSlots.some((s) => s.dia_semana === dow);
+              return (
+                <div key={dow} className="rounded-lg bg-zinc-50 px-3 py-2">
+                  <label className="flex items-center gap-2 text-sm font-medium">
+                    <input
+                      type="checkbox"
+                      checked={dayEnabled}
+                      onChange={(e) => toggleLeagueDay(dow, e.target.checked)}
+                      className="h-4 w-4 rounded border-zinc-300"
+                    />
+                    {DIAS_SEMANA[dow]}
+                  </label>
+                  {dayEnabled && (
+                    <div className="mt-2 flex flex-col gap-1.5 pl-6">
+                      {courts.map((court) => {
+                        const slot = leagueSlotFor(dow, court.id);
+                        return (
+                          <div key={court.id} className="flex flex-wrap items-center gap-3 text-sm">
+                            <label className="flex w-28 shrink-0 items-center gap-2 text-xs text-zinc-600">
+                              <input
+                                type="checkbox"
+                                checked={!!slot}
+                                onChange={(e) => toggleLeagueCourtDay(dow, court.id, e.target.checked)}
+                                className="h-4 w-4 rounded border-zinc-300"
+                              />
+                              {court.name}
+                            </label>
+                            {slot && (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs text-zinc-500">de</span>
+                                <input
+                                  type="time"
+                                  defaultValue={slot.hora_inicio.slice(0, 5)}
+                                  onBlur={(e) => updateLeagueSlot(slot, { hora_inicio: e.target.value })}
+                                  className="rounded-md border border-zinc-300 px-2 py-1 text-xs"
+                                />
+                                <span className="text-xs text-zinc-500">a</span>
+                                <input
+                                  type="time"
+                                  defaultValue={slot.hora_fin.slice(0, 5)}
+                                  onBlur={(e) => updateLeagueSlot(slot, { hora_fin: e.target.value })}
+                                  className="rounded-md border border-zinc-300 px-2 py-1 text-xs"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+      )}
 
       {availableGridDays.length > 0 && (
         <Card>
@@ -303,6 +609,32 @@ export function TournamentManage() {
             teamsById={allTeamsById}
             categoriesById={categoriesById}
             fileName={`grilla-${tournament.name}-${selectedGridDay}`}
+          />
+        </Card>
+      )}
+
+      {isLiga && availableWeeks.length > 0 && (
+        <Card>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold">Semana para Instagram</h2>
+              <p className="text-xs text-zinc-500">Cartel vertical con todos los partidos de la semana, por día y cancha, listo para subir a una historia.</p>
+            </div>
+            <Select value={selectedWeek} onChange={(e) => setSelectedWeek(e.target.value)} className="w-auto">
+              {availableWeeks.map((w) => (
+                <option key={w} value={w}>Semana del {w}</option>
+              ))}
+            </Select>
+          </div>
+          <WeeklyFixtureStory
+            tournamentName={tournament.name}
+            logoUrl={tournament.logo_url}
+            weekDates={weekDatesFrom(selectedWeek)}
+            matches={allMatches}
+            courts={courts}
+            teamsById={allTeamsById}
+            categoriesById={categoriesById}
+            fileName={`semana-${tournament.name}-${selectedWeek}`}
           />
         </Card>
       )}

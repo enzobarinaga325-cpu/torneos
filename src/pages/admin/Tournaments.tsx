@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Plus, Eye, EyeOff, Trash2, Image as ImageIcon } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { SiteSettings, Tournament } from "@/lib/types";
+import type { Modalidad, SiteSettings, Tournament } from "@/lib/types";
 import { formatDateRange } from "@/lib/format";
 import { uploadSiteImage } from "@/lib/images";
-import { Button, Card, Input, Label, Badge } from "@/components/ui";
+import { Button, Card, Input, Label, Select, Badge } from "@/components/ui";
 
 function slugify(name: string): string {
   return (
@@ -28,6 +28,7 @@ export function Tournaments() {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
+  const [modalidad, setModalidad] = useState<Modalidad>("torneo");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [creating, setCreating] = useState(false);
@@ -81,13 +82,14 @@ export function Tournaments() {
     if (existing.has(slug)) slug = `${slug}-${Date.now().toString(36)}`;
     const { error } = await supabase
       .from("tournaments")
-      .insert({ name: name.trim(), slug, start_date: startDate || null, end_date: endDate || startDate || null });
+      .insert({ name: name.trim(), slug, modalidad, start_date: startDate || null, end_date: endDate || startDate || null });
     setCreating(false);
     if (error) {
       setError(error.message);
       return;
     }
     setName("");
+    setModalidad("torneo");
     setStartDate("");
     setEndDate("");
     load();
@@ -163,6 +165,13 @@ export function Tournaments() {
             <Label>Nombre</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Apertura 2026" required />
           </div>
+          <div className="w-36">
+            <Label>Modalidad</Label>
+            <Select value={modalidad} onChange={(e) => setModalidad(e.target.value as Modalidad)}>
+              <option value="torneo">Torneo</option>
+              <option value="liga">Liga</option>
+            </Select>
+          </div>
           <div className="w-44">
             <Label>Fecha de inicio</Label>
             <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
@@ -193,6 +202,7 @@ export function Tournaments() {
                   </Link>
                   <Badge color={statusLabels[t.status].color}>{statusLabels[t.status].label}</Badge>
                   <Badge color={t.published ? "green" : "zinc"}>{t.published ? "Publicado" : "Privado"}</Badge>
+                  <Badge color={t.modalidad === "liga" ? "amber" : "zinc"}>{t.modalidad === "liga" ? "Liga" : "Torneo"}</Badge>
                 </div>
                 {editingDatesFor === t.id ? (
                   <div className="mt-1 flex flex-wrap items-center gap-2">

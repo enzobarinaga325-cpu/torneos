@@ -2,17 +2,21 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Banknote, Landmark, Pencil, Plus, Shuffle, Trash2, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { Category, Court, Match, Team, Zone } from "@/lib/types";
+import type { Category, Court, Match, Team, Tournament, Zone } from "@/lib/types";
 import { buildBracket, computeStandings, matchWinner, proposeZones, roundRobinPairs } from "@/lib/tournament-logic";
+import { roundRobinJourneys } from "@/lib/league-logic";
 import { autoScheduleTournament } from "@/lib/autoschedule";
+import { autoScheduleLeague } from "@/lib/league-autoschedule";
 import { FixtureBracket } from "@/components/FixtureBracket";
 import { ZonesView } from "@/components/ZonesView";
+import { LeagueStandings } from "@/components/LeagueStandings";
 import { Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
 
-type Tab = "equipos" | "inscripciones" | "zonas" | "fixture";
+type Tab = "equipos" | "inscripciones" | "zonas" | "fixture" | "liga";
 
 export function CategoryManage() {
   const { id: tournamentId, categoryId } = useParams<{ id: string; categoryId: string }>();
+  const [tournament, setTournament] = useState<Tournament | null | undefined>(undefined);
   const [category, setCategory] = useState<Category | null | undefined>(undefined);
   const [teams, setTeams] = useState<Team[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
@@ -25,22 +29,26 @@ export function CategoryManage() {
   const [editingTeamName, setEditingTeamName] = useState("");
   const [teamsPerZone, setTeamsPerZone] = useState("4");
   const [qualifiersPerZone, setQualifiersPerZone] = useState("2");
+  const [idaVuelta, setIdaVuelta] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    const [{ data: cat }, { data: t }, { data: z }, { data: m }, { data: co }] = await Promise.all([
+    const [{ data: tour }, { data: cat }, { data: t }, { data: z }, { data: m }, { data: co }] = await Promise.all([
+      supabase.from("tournaments").select("*").eq("id", tournamentId!).maybeSingle(),
       supabase.from("categories").select("*").eq("id", categoryId!).maybeSingle(),
       supabase.from("teams").select("*").eq("category_id", categoryId!).order("name"),
       supabase.from("zones").select("*").eq("category_id", categoryId!).order("position"),
       supabase.from("matches").select("*").eq("category_id", categoryId!).order("round_order").order("position"),
       supabase.from("courts").select("*").eq("tournament_id", tournamentId!).order("name"),
     ]);
+    setTournament(tour ?? null);
     setCategory(cat ?? null);
     setTeams(t ?? []);
     setZones(z ?? []);
     setMatches((m as Match[]) ?? []);
     setCourts(co ?? []);
+    if (tour) setIdaVuelta(tour.ida_vuelta);
   }
 
   useEffect(() => {
@@ -49,10 +57,13 @@ export function CategoryManage() {
   }, [categoryId]);
 
   const teamsById = useMemo(() => Object.fromEntries(teams.map((t) => [t.id, t])), [teams]);
+  const isLiga = tournament?.modalidad === "liga";
   const zoneMatches = matches.filter((m) => m.stage === "zona");
   const fixtureMatches = matches.filter((m) => m.stage === "fixture");
+  const ligaMatches = matches.filter((m) => m.stage === "liga");
   const hasZoneMatches = zoneMatches.length > 0;
   const hasFixture = fixtureMatches.length > 0;
+  const hasLigaMatches = ligaMatches.length > 0;
 
   // ============ EQUIPOS ============
   async function addTeam(e: React.FormEvent) {
@@ -198,7 +209,46 @@ export function CategoryManage() {
     load();
   }
 
-  // ============ PARTIDOS (comunes a zona y fixture) ============
+  // ============ LIGA ============
+  async function generateLeagueFixture() {
+    if (teams.length < 2) { setError("Cargá al menos 2 equipos primero."); return; }
+    if (hasLigaMatches && !confirm("Ya hay un fixture de liga cargado. Esto lo borra y arma uno nuevo (se pierden los resultados). ¿Seguir?")) return;
+
+    const journeys = roundRobinJourneys(teams.map((t) => t.id), idaVuelta);
+    if (journeys.length === 0) { setError("Hacen falta al menos 2 equipos para armar el fixture de liga."); return; }
+
+    setBusy(true);
+    setError(null);
+    await supabase.from("tournaments").update({ ida_vuelta: idaVuelta }).eq("id", tournamentId!);
+    await supabase.from("matches").delete().eq("category_id", categoryId!).eq("stage", "liga");
+
+    const idaJornadas = idaVuelta ? journeys.length / 2 : journeys.length;
+    for (let j = 0; j < journeys.length; j++) {
+      const pairs = journeys[j];
+      if (pairs.length === 0) continue;
+      const isVuelta = j >= idaJornadas;
+      const jornadaNum = isVuelta ? j - idaJornadas + 1 : j + 1;
+      const roundName = isVuelta ? `Jornada ${jornadaNum} (vuelta)` : `Jornada ${jornadaNum}`;
+      await supabase.from("matches").insert(
+        pairs.map(([a, b], i) => ({
+          category_id: categoryId,
+          stage: "liga",
+          round_name: roundName,
+          round_order: j,
+          position: i,
+          team1_id: a,
+          team2_id: b,
+        })),
+      );
+    }
+    // Ya nacen con las dos parejas conocidas: se agendan de una según los horarios
+    // semanales de la liga (si ya están cargados).
+    await autoScheduleLeague(tournamentId!);
+    setBusy(false);
+    load();
+  }
+
+  // ============ PARTIDOS (comunes a zona, fixture y liga) ============
   async function updateMatchTeam(match: Match, slot: 1 | 2, teamId: string) {
     await supabase.from("matches").update(slot === 1 ? { team1_id: teamId || null } : { team2_id: teamId || null }).eq("id", match.id);
     load();
@@ -322,7 +372,7 @@ export function CategoryManage() {
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="flex gap-1 rounded-lg bg-zinc-100 p-1 text-sm w-fit">
-        {(["equipos", "inscripciones", "zonas", "fixture"] as Tab[]).map((tKey) => (
+        {((isLiga ? ["equipos", "inscripciones", "liga"] : ["equipos", "inscripciones", "zonas", "fixture"]) as Tab[]).map((tKey) => (
           <button
             key={tKey}
             onClick={() => setTab(tKey)}
@@ -351,15 +401,17 @@ export function CategoryManage() {
           <Card>
             <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
               <h2 className="text-sm font-semibold">Equipos ({teams.length})</h2>
-              <div className="flex items-end gap-2">
-                <div className="w-40">
-                  <Label>Equipos por zona</Label>
-                  <Input type="number" min={2} value={teamsPerZone} onChange={(e) => setTeamsPerZone(e.target.value)} />
+              {!isLiga && (
+                <div className="flex items-end gap-2">
+                  <div className="w-40">
+                    <Label>Equipos por zona</Label>
+                    <Input type="number" min={2} value={teamsPerZone} onChange={(e) => setTeamsPerZone(e.target.value)} />
+                  </div>
+                  <Button onClick={generateZones} disabled={busy}>
+                    <Shuffle className="h-3.5 w-3.5" /> Generar zonas
+                  </Button>
                 </div>
-                <Button onClick={generateZones} disabled={busy}>
-                  <Shuffle className="h-3.5 w-3.5" /> Generar zonas
-                </Button>
-              </div>
+              )}
             </div>
             {teams.length === 0 ? (
               <p className="text-xs text-zinc-500">Todavía no cargaste equipos.</p>
@@ -548,6 +600,48 @@ export function CategoryManage() {
                 <div className="flex gap-4 overflow-x-auto pb-2">
                   {[...new Set(fixtureMatches.map((m) => m.round_order))].sort((a, b) => (a ?? 0) - (b ?? 0)).map((ro) => {
                     const roundMatches = fixtureMatches.filter((m) => m.round_order === ro);
+                    return (
+                      <div key={ro} className="flex min-w-[260px] flex-col gap-2">
+                        <h4 className="text-sm font-semibold text-zinc-700">{roundMatches[0]?.round_name}</h4>
+                        {roundMatches.map((m) => (
+                          <MatchRow key={m.id} match={m} teams={teams} courts={courts} onTeamChange={updateMatchTeam} onCourtChange={updateMatchCourt} onScheduleChange={updateMatchSchedule} onSaveResult={saveResult} compact />
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {tab === "liga" && (
+        <div className="flex flex-col gap-4">
+          <Card className="flex flex-wrap items-end justify-between gap-3">
+            <label className="flex items-center gap-2 text-sm text-zinc-700">
+              <input type="checkbox" checked={idaVuelta} onChange={(e) => setIdaVuelta(e.target.checked)} className="h-4 w-4 rounded border-zinc-300" />
+              Ida y vuelta
+            </label>
+            <Button onClick={generateLeagueFixture} disabled={busy || teams.length < 2}>
+              {hasLigaMatches ? "Regenerar fixture de liga" : "Generar fixture de liga"}
+            </Button>
+          </Card>
+
+          {!hasLigaMatches ? (
+            <Card className="text-center text-sm text-zinc-500">Todavía no se generó el fixture de esta liga.</Card>
+          ) : (
+            <>
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-zinc-700">Tabla de posiciones</h3>
+                <LeagueStandings teamIds={teams.map((t) => t.id)} matches={ligaMatches} teamsById={teamsById} fileName={`posiciones-${category.name}`} />
+              </div>
+
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-zinc-700">Fixture por jornada</h3>
+                <div className="flex gap-4 overflow-x-auto pb-2">
+                  {[...new Set(ligaMatches.map((m) => m.round_order))].sort((a, b) => (a ?? 0) - (b ?? 0)).map((ro) => {
+                    const roundMatches = ligaMatches.filter((m) => m.round_order === ro);
                     return (
                       <div key={ro} className="flex min-w-[260px] flex-col gap-2">
                         <h4 className="text-sm font-semibold text-zinc-700">{roundMatches[0]?.round_name}</h4>
