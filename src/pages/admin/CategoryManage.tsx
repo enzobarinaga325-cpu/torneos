@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Tournament, Zone } from "@/lib/types";
 import { buildBracket, computeStandings, matchWinner, proposeZones, roundRobinPairs } from "@/lib/tournament-logic";
 import { roundRobinJourneys } from "@/lib/league-logic";
+import { toLocalDatetimeInput } from "@/lib/format";
 import { autoScheduleTournament } from "@/lib/autoschedule";
 import { autoScheduleLeague } from "@/lib/league-autoschedule";
 import { FixtureBracket } from "@/components/FixtureBracket";
@@ -722,7 +723,7 @@ function MatchRow({
               // hasta recargar la página — parecía que el cambio "no se guardó".
               key={match.scheduled_at ?? "sin-horario"}
               type="datetime-local"
-              defaultValue={match.scheduled_at ? match.scheduled_at.slice(0, 16) : ""}
+              defaultValue={match.scheduled_at ? toLocalDatetimeInput(match.scheduled_at) : ""}
               onBlur={(e) => onScheduleChange(match, e.target.value ? new Date(e.target.value).toISOString() : "")}
               className="rounded-lg border border-zinc-300 px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
             />

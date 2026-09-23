@@ -13,6 +13,19 @@ export function localDateStr(iso: string | Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/**
+ * Convierte un `scheduled_at` (UTC) al string "YYYY-MM-DDTHH:MM" que espera un
+ * `<input type="datetime-local">`, en hora LOCAL de quien mira la pantalla. Antes se
+ * usaba `iso.slice(0, 16)`, que mostraba los dígitos crudos en UTC como si fueran la hora
+ * local — un partido guardado a las 23:00 UTC (20hs en Argentina) aparecía en el campo
+ * como "23:00", 3 horas adelantado de la hora real.
+ */
+export function toLocalDatetimeInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function formatDay(dateStr: string): { day: number; month: string } {
   const [y, m, d] = dateStr.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
