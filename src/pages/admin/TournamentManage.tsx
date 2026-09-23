@@ -293,7 +293,7 @@ export function TournamentManage() {
     setError(null);
     await supabase
       .from("matches")
-      .update({ court_id: null, scheduled_at: null })
+      .update({ court_id: null, scheduled_at: null, auto_scheduled: true })
       .in("category_id", categories.map((c) => c.id))
       .eq("stage", "liga");
     setScheduling(false);

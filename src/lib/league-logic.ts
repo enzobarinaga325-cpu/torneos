@@ -88,25 +88,28 @@ function projectLeagueSlots(
 export type LeagueMatchInput = { id: string; team1_id: string; team2_id: string };
 
 /**
- * Reparte los partidos de liga (ya agrupados por jornada, en orden) entre las franjas
- * semanales habilitadas de cada cancha (cada cancha puede tener su propio horario). Reglas
- * duras: dentro de un mismo horario exacto (aunque sea en canchas distintas) ningún equipo
- * juega dos veces, así que nunca quedan dos partidos superpuestos de la misma pareja ni más
- * de uno por noche. Los partidos de una jornada ya nunca repiten equipo entre sí, así que
- * tienden a entrar todos en la semana que les corresponde; si no entran todos, los que
- * sobran pasan a la semana siguiente sin romper la regla de "un partido por horario por
- * equipo".
+ * Reparte los partidos de liga entre las franjas semanales habilitadas de cada cancha (cada
+ * cancha puede tener su propio horario). `categoryQueues` trae UN arreglo por categoría, con
+ * los partidos de esa categoría en orden de jornada — el reparto va ROTANDO entre categorías
+ * a medida que llena horarios (categoría 1, categoría 2, categoría 3, categoría 1 de nuevo…)
+ * en vez de vaciar una categoría entera antes de tocar la siguiente, para que todas vayan
+ * jugando a lo largo de la semana. Reglas duras: dentro de un mismo horario exacto (aunque
+ * sea en canchas distintas) ningún equipo juega dos veces, así que nunca quedan dos partidos
+ * superpuestos de la misma pareja ni más de uno por noche. Si en un horario no entra ningún
+ * partido de ninguna categoría (todas bloqueadas por algún equipo ya ocupado), esa cancha
+ * queda libre esa vez en vez de forzar algo.
  */
 export function buildLeagueSchedule(
-  journeys: LeagueMatchInput[][],
+  categoryQueues: LeagueMatchInput[][],
   slots: CourtSlot[],
   durationMinutes: number,
   startDate: string,
   alreadyScheduled: ExistingSchedule[] = [],
 ): { assignments: ScheduleAssignment[]; unscheduledCount: number } {
-  const allMatches = journeys.flat();
-  if (allMatches.length === 0 || slots.length === 0) {
-    return { assignments: [], unscheduledCount: allMatches.length };
+  const queues = categoryQueues.map((q) => [...q]).filter((q) => q.length > 0);
+  let remainingCount = queues.reduce((n, q) => n + q.length, 0);
+  if (remainingCount === 0 || slots.length === 0) {
+    return { assignments: [], unscheduledCount: remainingCount };
   }
 
   const capacityPerWeek = slots.reduce((sum, s) => {
@@ -116,15 +119,15 @@ export function buildLeagueSchedule(
     return sum + Math.floor((endMin - startMin) / durationMinutes);
   }, 0);
   // +4 semanas de colchón por si algún partido no entra justo en la semana que le toca.
-  const weeksAhead = capacityPerWeek > 0 ? Math.ceil(allMatches.length / capacityPerWeek) + 4 : 0;
+  const weeksAhead = capacityPerWeek > 0 ? Math.ceil(remainingCount / capacityPerWeek) + 4 : 0;
   const occurrences = weeksAhead > 0 ? projectLeagueSlots(slots, startDate, weeksAhead, durationMinutes) : [];
 
   const occupiedCourtSlots = new Set(alreadyScheduled.map((m) => slotKey(m.court_id, m.scheduled_at)));
-  const remaining = [...allMatches];
   const assignments: ScheduleAssignment[] = [];
+  let rot = 0; // próxima categoría a probar primero
 
   let i = 0;
-  while (i < occurrences.length && remaining.length > 0) {
+  while (i < occurrences.length && remainingCount > 0) {
     // Agrupa todas las ocurrencias (de cualquier cancha) que caen exactamente en el mismo
     // horario, para no dejar que un mismo equipo quede anotado dos veces a la misma hora
     // en canchas distintas.
@@ -135,14 +138,23 @@ export function buildLeagueSchedule(
       i++;
       const iso = date.toISOString();
       if (occupiedCourtSlots.has(slotKey(courtId, iso))) continue;
-      const idx = remaining.findIndex((m) => !busyThisSlot.has(m.team1_id) && !busyThisSlot.has(m.team2_id));
-      if (idx === -1) continue;
-      const match = remaining.splice(idx, 1)[0];
-      assignments.push({ matchId: match.id, courtId, scheduledAt: iso });
-      busyThisSlot.add(match.team1_id);
-      busyThisSlot.add(match.team2_id);
+      if (queues.length === 0) continue;
+
+      for (let tries = 0; tries < queues.length; tries++) {
+        const qIdx = (rot + tries) % queues.length;
+        const queue = queues[qIdx];
+        const idx = queue.findIndex((m) => !busyThisSlot.has(m.team1_id) && !busyThisSlot.has(m.team2_id));
+        if (idx === -1) continue;
+        const match = queue.splice(idx, 1)[0];
+        assignments.push({ matchId: match.id, courtId, scheduledAt: iso });
+        busyThisSlot.add(match.team1_id);
+        busyThisSlot.add(match.team2_id);
+        remainingCount--;
+        rot = (qIdx + 1) % queues.length;
+        break;
+      }
     }
   }
 
-  return { assignments, unscheduledCount: remaining.length };
+  return { assignments, unscheduledCount: remainingCount };
 }

@@ -62,6 +62,7 @@ create table if not exists matches (
   team2_id uuid references teams(id) on delete set null,
   court_id uuid references courts(id) on delete set null,
   scheduled_at timestamptz,
+  auto_scheduled boolean not null default true, -- false = el admin lo movió a mano
   team1_sets int,
   team2_sets int,
   winner_id uuid references teams(id) on delete set null,

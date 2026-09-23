@@ -316,13 +316,15 @@ export function CategoryManage() {
         }
         await supabase
           .from("matches")
-          .update({ court_id: match.court_id, scheduled_at: match.scheduled_at })
+          .update({ court_id: match.court_id, scheduled_at: match.scheduled_at, auto_scheduled: false })
           .eq("id", occupant.id);
       }
     }
 
     setError(null);
-    await supabase.from("matches").update({ court_id: newCourtId, scheduled_at: newScheduledAt }).eq("id", match.id);
+    // auto_scheduled: false marca que este horario lo eligió el admin a mano, así el
+    // auto-agendado de liga nunca lo va a mover cuando después replanifique otras categorías.
+    await supabase.from("matches").update({ court_id: newCourtId, scheduled_at: newScheduledAt, auto_scheduled: false }).eq("id", match.id);
     load();
   }
 

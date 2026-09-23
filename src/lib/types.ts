@@ -86,6 +86,7 @@ export type Match = {
   team2_id: string | null;
   court_id: string | null;
   scheduled_at: string | null;
+  auto_scheduled: boolean; // false = el admin lo movió a mano (autoScheduleLeague no lo toca)
   set1_team1: number | null;
   set1_team2: number | null;
   set2_team1: number | null;
