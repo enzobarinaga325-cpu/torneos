@@ -63,37 +63,37 @@ export function DailyFixtureStory({
 
       <div className="overflow-hidden rounded-xl border border-zinc-200">
         <div ref={ref} className="mx-auto w-[480px] bg-gradient-to-b from-zinc-950 via-zinc-950 to-emerald-950">
-          <div className="flex flex-col items-center px-7 pb-6 pt-9">
+          <div className="flex flex-col items-center px-7 pb-3 pt-5">
             {logoUrl && (
               // eslint-disable-next-line jsx-a11y/alt-text
-              <img src={logoUrl} crossOrigin="anonymous" alt={tournamentName} className="h-24 w-auto max-w-[70%] object-contain" />
+              <img src={logoUrl} crossOrigin="anonymous" alt={tournamentName} className="h-14 w-auto max-w-[60%] object-contain" />
             )}
-            <p className={`text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-400 ${logoUrl ? "mt-5" : ""}`}>
+            <p className={`text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-400 ${logoUrl ? "mt-2" : ""}`}>
               Partidos de hoy
             </p>
-            {!logoUrl && <h1 className="mt-1.5 text-2xl font-bold leading-tight text-white">{tournamentName}</h1>}
-            <p className="mt-1.5 text-xs font-medium tracking-wide text-emerald-100/70">{dayLabel(date)}</p>
-            <div className="mt-5 h-px w-14 bg-emerald-500/50" />
+            {!logoUrl && <h1 className="mt-1 text-xl font-bold leading-tight text-white">{tournamentName}</h1>}
+            <p className="mt-1 text-[11px] font-medium tracking-wide text-emerald-100/70">{dayLabel(date)}</p>
+            <div className="mt-2 h-px w-14 bg-emerald-500/50" />
           </div>
 
-          <div className="flex flex-col gap-3.5 px-6 pb-8">
+          <div className="flex flex-col gap-2 px-5 pb-4">
             <div className="overflow-hidden rounded-2xl bg-white shadow-[0_4px_20px_rgba(0,0,0,0.25)]">
-              <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 px-4 py-2.5">
-                <p className="text-sm font-bold uppercase tracking-wide text-white">{dayLabel(date)}</p>
+              <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 px-3.5 py-1.5">
+                <p className="text-xs font-bold uppercase tracking-wide text-white">{dayLabel(date)}</p>
               </div>
-              <div className="flex flex-col divide-y divide-zinc-100 px-4 py-3">
+              <div className="flex flex-col divide-y divide-zinc-100 px-3.5 py-2">
                 {byCourt.map(({ court, matches: cm }) => (
-                  <div key={court.id} className="py-2.5 first:pt-0 last:pb-0">
-                    <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-emerald-700">{court.name}</p>
-                    <div className="flex flex-col gap-1.5">
+                  <div key={court.id} className="py-1.5 first:pt-0 last:pb-0">
+                    <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">{court.name}</p>
+                    <div className="flex flex-col gap-1">
                       {cm.map((m) => (
-                        <div key={m.id} className="flex items-center gap-2.5">
-                          <span className="w-12 shrink-0 rounded-md bg-emerald-50 py-0.5 text-center font-mono text-[11px] font-semibold text-emerald-800">
+                        <div key={m.id} className="flex items-center gap-2">
+                          <span className="w-11 shrink-0 rounded-md bg-emerald-50 py-0.5 text-center font-mono text-[10px] font-semibold text-emerald-800">
                             {timeLabel(m.scheduled_at as string)}
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-[10px] uppercase tracking-wide text-zinc-400">{categoriesById[m.category_id]?.name}</p>
-                            <p className="truncate text-[12.5px] font-medium leading-tight text-zinc-800">
+                            <p className="truncate text-[9px] uppercase tracking-wide text-zinc-400">{categoriesById[m.category_id]?.name}</p>
+                            <p className="truncate text-[11.5px] font-medium leading-tight text-zinc-800">
                               {teamsById[m.team1_id ?? ""]?.name ?? "?"} <span className="text-zinc-300">vs</span> {teamsById[m.team2_id ?? ""]?.name ?? "?"}
                             </p>
                           </div>
@@ -106,8 +106,8 @@ export function DailyFixtureStory({
             </div>
           </div>
 
-          <div className="pb-6 text-center">
-            <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-emerald-100/30">{tournamentName}</p>
+          <div className="pb-3 text-center">
+            <p className="text-[9px] font-medium uppercase tracking-[0.2em] text-emerald-100/30">{tournamentName}</p>
           </div>
         </div>
       </div>

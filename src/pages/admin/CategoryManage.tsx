@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, Pencil, Plus, Shuffle, Trash2, Trophy } from "lucide-react";
+import { ArrowLeft, Pencil, Plus, Shuffle, Trash2, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Tournament, Zone } from "@/lib/types";
 import { buildBracket, computeStandings, matchWinner, proposeZones, roundRobinPairs } from "@/lib/tournament-logic";
@@ -13,7 +13,7 @@ import { ZonesView } from "@/components/ZonesView";
 import { LeagueStandings } from "@/components/LeagueStandings";
 import { Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
 
-type Tab = "equipos" | "inscripciones" | "zonas" | "fixture" | "liga";
+type Tab = "equipos" | "zonas" | "fixture" | "liga";
 
 export function CategoryManage() {
   const { id: tournamentId, categoryId } = useParams<{ id: string; categoryId: string }>();
@@ -93,11 +93,6 @@ export function CategoryManage() {
     if (!name) return;
     await supabase.from("teams").update({ name }).eq("id", teamId);
     setEditingTeamId(null);
-    load();
-  }
-
-  async function togglePaid(team: Team) {
-    await supabase.from("teams").update({ paid: !team.paid }).eq("id", team.id);
     load();
   }
 
@@ -399,7 +394,7 @@ export function CategoryManage() {
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="flex gap-1 rounded-lg bg-zinc-100 p-1 text-sm w-fit">
-        {((isLiga ? ["equipos", "inscripciones", "liga"] : ["equipos", "inscripciones", "zonas", "fixture"]) as Tab[]).map((tKey) => (
+        {((isLiga ? ["equipos", "liga"] : ["equipos", "zonas", "fixture"]) as Tab[]).map((tKey) => (
           <button
             key={tKey}
             onClick={() => setTab(tKey)}
@@ -496,33 +491,6 @@ export function CategoryManage() {
             )}
           </Card>
         </div>
-      )}
-
-      {tab === "inscripciones" && (
-        <Card>
-          <h2 className="mb-3 text-sm font-semibold">
-            Inscripciones · {teams.filter((t) => t.paid).length}/{teams.length} pagaron
-          </h2>
-          {teams.length === 0 ? (
-            <p className="text-xs text-zinc-500">Todavía no cargaste equipos.</p>
-          ) : (
-            <div className="flex flex-col gap-1.5">
-              {teams.map((team) => (
-                <div key={team.id} className="flex items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2">
-                  <span className="text-sm">{team.name}</span>
-                  <button
-                    onClick={() => togglePaid(team)}
-                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ${
-                      team.paid ? "bg-emerald-600 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-                    }`}
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5" /> {team.paid ? "Pagó" : "No pagó"}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
       )}
 
       {tab === "zonas" && (

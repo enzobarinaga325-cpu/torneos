@@ -231,6 +231,45 @@ export function TournamentDetail() {
                     fileName={`zonas-${tournament.slug}-${categories.find((c) => c.id === activeCategory)?.name ?? ""}`}
                     showDownload={false}
                   />
+                  {zoneMatches.length > 0 && (
+                    <div className="flex flex-col gap-3">
+                      <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Partidos por zona</h2>
+                      {zones.map((zone) => {
+                        const myMatches = zoneMatches.filter((m) => m.zone_id === zone.id);
+                        if (myMatches.length === 0) return null;
+                        return (
+                          <div key={zone.id} className="rounded-xl border border-zinc-200 bg-white p-4">
+                            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">{zone.name}</h3>
+                            <div className="flex flex-col gap-2">
+                              {myMatches.map((m) => {
+                                const winner = matchWinner(m);
+                                return (
+                                  <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-sm">
+                                    <div className="flex flex-1 items-center justify-between gap-2 min-w-[180px]">
+                                      <span className={winner === 1 ? "font-semibold text-emerald-700" : ""}>
+                                        {teamsById[m.team1_id ?? ""]?.name ?? "?"}
+                                      </span>
+                                      <span className="text-xs text-zinc-400">vs</span>
+                                      <span className={winner === 2 ? "font-semibold text-emerald-700" : ""}>
+                                        {teamsById[m.team2_id ?? ""]?.name ?? "?"}
+                                      </span>
+                                    </div>
+                                    {m.scheduled_at && (
+                                      <span className="shrink-0 font-mono text-xs text-zinc-500">
+                                        {new Date(m.scheduled_at).toLocaleString("es-AR", {
+                                          weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+                                        })}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 

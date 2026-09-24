@@ -60,7 +60,6 @@ export type Team = {
   category_id: string;
   name: string;
   zone_id: string | null;
-  paid: boolean;
   created_at: string;
 };
 

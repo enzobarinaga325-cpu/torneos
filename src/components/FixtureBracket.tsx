@@ -1,8 +1,7 @@
-import { useRef, useState } from "react";
-import { toPng } from "html-to-image";
 import { Download, Loader2, Trophy } from "lucide-react";
 import type { Match, Team } from "@/lib/types";
 import { matchWinner } from "@/lib/tournament-logic";
+import { useDownloadImage } from "@/lib/useDownloadImage";
 import { Button } from "./ui";
 
 const SLOT_BASE = 92; // alto de un partido de la 1ra ronda, en px
@@ -54,8 +53,7 @@ export function FixtureBracket({
   fileName: string;
   showDownload?: boolean;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [downloading, setDownloading] = useState(false);
+  const { ref: containerRef, download, downloading } = useDownloadImage(fileName);
 
   const roundOrders = [...new Set(matches.map((m) => m.round_order ?? 0))].sort((a, b) => a - b);
   const rounds = roundOrders.map((ro) => matches.filter((m) => (m.round_order ?? 0) === ro).sort((a, b) => a.position - b.position));
@@ -63,20 +61,6 @@ export function FixtureBracket({
 
   const final = rounds[rounds.length - 1]?.[0];
   const championId = final ? matchWinner(final) === 1 ? final.team1_id : matchWinner(final) === 2 ? final.team2_id : null : null;
-
-  async function download() {
-    if (!containerRef.current) return;
-    setDownloading(true);
-    try {
-      const dataUrl = await toPng(containerRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      const a = document.createElement("a");
-      a.href = dataUrl;
-      a.download = `${fileName}.png`;
-      a.click();
-    } finally {
-      setDownloading(false);
-    }
-  }
 
   return (
     <div className="flex flex-col gap-3">
