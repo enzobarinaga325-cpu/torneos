@@ -38,12 +38,29 @@ export function useDownloadImage(fileName: string) {
         scale,
         useCORS: true,
       });
-      const dataUrl = canvas.toDataURL("image/png");
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+      if (!blob) return;
+      const file = new File([blob], `${fileName}.png`, { type: "image/png" });
 
+      // En celular (sobre todo iOS) no hay un "guardar como" tradicional para un blob
+      // descargado — el menú nativo de compartir sí permite elegir "Guardar imagen" y que
+      // quede en Fotos, así que se prioriza eso cuando el navegador lo soporta.
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file] });
+        } catch (err) {
+          if (err instanceof Error && err.name === "AbortError") return; // el usuario cerró el menú sin elegir nada
+          throw err;
+        }
+        return;
+      }
+
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = dataUrl;
+      a.href = url;
       a.download = `${fileName}.png`;
       a.click();
+      URL.revokeObjectURL(url);
     } finally {
       setDownloading(false);
     }
