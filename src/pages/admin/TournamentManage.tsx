@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, CalendarClock, CheckCircle2, Image as ImageIcon, RefreshCw, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, CalendarClock, CheckCircle2, Image as ImageIcon, Printer, RefreshCw, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, LeagueSlot, Match, Modalidad, Team, Tournament, TournamentDay } from "@/lib/types";
 import { matchWinner } from "@/lib/tournament-logic";
@@ -11,6 +11,7 @@ import { DIAS_SEMANA } from "@/lib/league-logic";
 import { localDateStr, todayStr } from "@/lib/format";
 import { DayGrid } from "@/components/DayGrid";
 import { DailyFixtureStory } from "@/components/DailyFixtureStory";
+import { ParticipantsList } from "@/components/ParticipantsList";
 import { Badge, Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
 
 /** Lunes a domingo, para mostrarlos en el orden natural de la semana (día 0 = domingo). */
@@ -144,7 +145,7 @@ export function TournamentManage() {
     setError(null);
     await supabase
       .from("matches")
-      .update({ court_id: null, scheduled_at: null })
+      .update({ court_id: null, scheduled_at: null, auto_scheduled: true })
       .in("category_id", categories.map((c) => c.id));
     setScheduling(false);
     load();
@@ -312,6 +313,12 @@ export function TournamentManage() {
 
   const allTeamsById = useMemo(() => Object.fromEntries(allTeams.map((t) => [t.id, t])), [allTeams]);
   const categoriesById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories]);
+  const teamsByCategory = useMemo(() => {
+    const byCat: Record<string, Team[]> = {};
+    for (const t of allTeams) (byCat[t.category_id] ??= []).push(t);
+    for (const list of Object.values(byCat)) list.sort((a, b) => a.name.localeCompare(b.name));
+    return byCat;
+  }, [allTeams]);
   const availableGridDays = useMemo(
     () => [...new Set(allMatches.map((m) => localDateStr(m.scheduled_at as string)))].sort(),
     [allMatches],
@@ -641,7 +648,14 @@ export function TournamentManage() {
       </Card>
 
       <Card>
-        <h2 className="mb-3 text-sm font-semibold">Categorías</h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">Categorías</h2>
+          {allTeams.length > 0 && (
+            <Button variant="secondary" onClick={() => window.print()}>
+              <Printer className="h-3.5 w-3.5" /> Imprimir participantes
+            </Button>
+          )}
+        </div>
         <form onSubmit={addCategory} className="mb-3 flex items-end gap-3">
           <div className="flex-1">
             <Label>Nombre</Label>
@@ -675,6 +689,8 @@ export function TournamentManage() {
           </div>
         )}
       </Card>
+
+      <ParticipantsList tournamentName={tournament.name} categories={categories} teamsByCategory={teamsByCategory} />
     </div>
   );
 }

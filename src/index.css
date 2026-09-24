@@ -10,3 +10,21 @@ body {
   color: #18181b;
   font-family: system-ui, "Segoe UI", Roboto, sans-serif;
 }
+
+/* Imprimir una lista (ej. participantes): solo se ve .print-area, el resto de la página
+   (nav, botones, todo) se oculta aunque esté en otra parte del DOM. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+}

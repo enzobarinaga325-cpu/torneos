@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Banknote, Landmark, Pencil, Plus, Shuffle, Trash2, Trophy } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Pencil, Plus, Shuffle, Trash2, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, Match, Team, Tournament, Zone } from "@/lib/types";
 import { buildBracket, computeStandings, matchWinner, proposeZones, roundRobinPairs } from "@/lib/tournament-logic";
@@ -96,10 +96,8 @@ export function CategoryManage() {
     load();
   }
 
-  /** Tocar el método ya marcado lo destilda (vuelve a "no pagado"); tocar el otro lo cambia. */
-  async function togglePayment(team: Team, method: "efectivo" | "transferencia") {
-    const next = team.payment_method === method ? null : method;
-    await supabase.from("teams").update({ payment_method: next }).eq("id", team.id);
+  async function togglePaid(team: Team) {
+    await supabase.from("teams").update({ paid: !team.paid }).eq("id", team.id);
     load();
   }
 
@@ -503,7 +501,7 @@ export function CategoryManage() {
       {tab === "inscripciones" && (
         <Card>
           <h2 className="mb-3 text-sm font-semibold">
-            Inscripciones · {teams.filter((t) => t.payment_method).length}/{teams.length} pagaron
+            Inscripciones · {teams.filter((t) => t.paid).length}/{teams.length} pagaron
           </h2>
           {teams.length === 0 ? (
             <p className="text-xs text-zinc-500">Todavía no cargaste equipos.</p>
@@ -512,24 +510,14 @@ export function CategoryManage() {
               {teams.map((team) => (
                 <div key={team.id} className="flex items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2">
                   <span className="text-sm">{team.name}</span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => togglePayment(team, "efectivo")}
-                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ${
-                        team.payment_method === "efectivo" ? "bg-emerald-600 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-                      }`}
-                    >
-                      <Banknote className="h-3.5 w-3.5" /> Efectivo
-                    </button>
-                    <button
-                      onClick={() => togglePayment(team, "transferencia")}
-                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ${
-                        team.payment_method === "transferencia" ? "bg-emerald-600 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-                      }`}
-                    >
-                      <Landmark className="h-3.5 w-3.5" /> Transferencia
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => togglePaid(team)}
+                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium ${
+                      team.paid ? "bg-emerald-600 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                    }`}
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" /> {team.paid ? "Pagó" : "No pagó"}
+                  </button>
                 </div>
               ))}
             </div>

@@ -1,14 +1,18 @@
 import { supabase } from "./supabase";
-import { buildSchedule } from "./tournament-logic";
+import { buildSchedule, type SchedulableMatch } from "./tournament-logic";
 
 export type AutoScheduleResult = { scheduled: number; unscheduled: number; error?: string };
 
 /**
- * Agenda cancha+horario para todos los partidos del torneo que ya tienen las dos parejas
- * definidas pero todavía no tienen horario asignado. Es seguro llamarla después de
- * cualquier evento que deje partidos nuevos "listos" (generar zona, generar fixture, o
- * cargar un resultado que hace avanzar a la próxima ronda): nunca toca un partido que ya
- * tiene horario, así que no reordena nada de lo que el admin ya ajustó a mano.
+ * Agenda cancha+horario para los partidos del torneo (zona + fixture) que ya tienen las
+ * dos parejas definidas. Replanifica TODOS los que todavía no se jugaron y que nadie movió
+ * a mano (`auto_scheduled = true`) — no solo los recién habilitados — para que las
+ * categorías se repartan bien las canchas libres y todas vayan terminando sus zonas por
+ * las mismas fechas, en vez de que una categoría acapare las primeras canchas libres antes
+ * de que la siguiente tenga partidos para agendar. Nunca toca un partido ya jugado ni uno
+ * que el admin movió a mano (eso queda con `auto_scheduled = false`). Es seguro llamarla
+ * después de cualquier evento que deje partidos nuevos "listos" (generar zona, generar
+ * fixture, o cargar un resultado que hace avanzar a la próxima ronda).
  */
 export async function autoScheduleTournament(tournamentId: string): Promise<AutoScheduleResult> {
   const [{ data: tournament }, { data: courts }, { data: days }, { data: categories }] = await Promise.all([
@@ -25,39 +29,57 @@ export async function autoScheduleTournament(tournamentId: string): Promise<Auto
   const categoryOrder = new Map(categories.map((c, i) => [c.id, i]));
   const categoryIds = categories.map((c) => c.id);
 
-  const [{ data: matches }, { data: scheduled }] = await Promise.all([
+  const [{ data: replanPool }, { data: locked }] = await Promise.all([
+    // Todo lo que no se jugó y nadie movió a mano — se vuelve a repartir de cero cada vez,
+    // tenga o no ya un horario puesto por una corrida anterior del auto-agendado.
     supabase
       .from("matches")
-      .select("*, zone:zones(position)")
+      .select("id, category_id, stage, zone:zones(position), round_order, position, team1_id, team2_id, scheduled_at")
       .in("category_id", categoryIds)
       .neq("stage", "liga") // los partidos de liga se agendan aparte, por franjas semanales
-      .is("scheduled_at", null)
+      .eq("auto_scheduled", true)
+      .is("winner_id", null)
       .not("team1_id", "is", null)
       .not("team2_id", "is", null),
+    // Lo ya jugado o movido a mano: se respeta tal cual, solo sirve para no pisarlo.
     supabase
       .from("matches")
       .select("court_id, scheduled_at, team1_id, team2_id")
       .in("category_id", categoryIds)
-      .not("scheduled_at", "is", null),
+      .not("scheduled_at", "is", null)
+      .or("auto_scheduled.eq.false,winner_id.not.is.null"),
   ]);
 
-  const pending = (matches ?? []).sort((a, b) => {
-    const catDiff = (categoryOrder.get(a.category_id) ?? 0) - (categoryOrder.get(b.category_id) ?? 0);
-    if (catDiff !== 0) return catDiff;
+  if (!replanPool || replanPool.length === 0) return { scheduled: 0, unscheduled: 0 };
+
+  const toReset = replanPool.filter((m) => m.scheduled_at).map((m) => m.id);
+  if (toReset.length > 0) {
+    await supabase.from("matches").update({ court_id: null, scheduled_at: null }).in("id", toReset);
+  }
+
+  const pending = replanPool.sort((a, b) => {
     if (a.stage !== b.stage) return a.stage === "zona" ? -1 : 1;
-    const zoneDiff = (a.zone?.position ?? 0) - (b.zone?.position ?? 0);
+    const zoneDiff = (a.zone?.[0]?.position ?? 0) - (b.zone?.[0]?.position ?? 0);
     if (zoneDiff !== 0) return zoneDiff;
     return (a.round_order ?? 0) - (b.round_order ?? 0) || a.position - b.position;
   });
 
-  if (pending.length === 0) return { scheduled: 0, unscheduled: 0 };
+  const queuesByCategory = new Map<string, SchedulableMatch[]>();
+  for (const m of pending) {
+    const q = queuesByCategory.get(m.category_id) ?? [];
+    q.push({ id: m.id, team1_id: m.team1_id, team2_id: m.team2_id });
+    queuesByCategory.set(m.category_id, q);
+  }
+  const categoryQueues = [...categoryOrder.keys()]
+    .map((catId) => queuesByCategory.get(catId))
+    .filter((q): q is SchedulableMatch[] => !!q);
 
   const { assignments, unscheduledCount } = buildSchedule(
-    pending.map((m) => ({ id: m.id, team1_id: m.team1_id, team2_id: m.team2_id })),
+    categoryQueues,
     courts.map((c) => c.id),
     [...days].sort((a, b) => a.date.localeCompare(b.date)),
     Math.max(15, tournament?.default_match_minutes ?? 60),
-    (scheduled ?? []).filter((m): m is typeof m & { court_id: string; scheduled_at: string } => !!m.court_id && !!m.scheduled_at),
+    (locked ?? []).filter((m): m is typeof m & { court_id: string; scheduled_at: string } => !!m.court_id && !!m.scheduled_at),
   );
 
   for (const a of assignments) {

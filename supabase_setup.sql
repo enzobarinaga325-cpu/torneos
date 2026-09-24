@@ -47,6 +47,7 @@ create table if not exists teams (
   category_id uuid not null references categories(id) on delete cascade,
   zone_id uuid references zones(id) on delete set null,
   name text not null,
+  paid boolean not null default false,
   created_at timestamptz not null default now()
 );
 
