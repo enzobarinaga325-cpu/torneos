@@ -66,10 +66,11 @@ function MatchRow({
         </span>
         <div className="min-w-0 flex-1">
           {category && <p className="truncate text-[9px] uppercase tracking-wide text-zinc-400">{category}</p>}
-          <p className="truncate text-[11.5px] font-medium leading-tight text-zinc-800">
-            <span className={winner === 1 ? "font-bold text-emerald-700" : ""}>{team1}</span>{" "}
-            <span className="text-zinc-300">vs</span>{" "}
-            <span className={winner === 2 ? "font-bold text-emerald-700" : ""}>{team2}</span>
+          <p className={`truncate text-[11.5px] leading-tight ${winner === 1 ? "font-bold text-emerald-700" : "font-medium text-zinc-800"}`}>
+            {team1}
+          </p>
+          <p className={`truncate text-[11.5px] leading-tight ${winner === 2 ? "font-bold text-emerald-700" : "font-medium text-zinc-800"}`}>
+            <span className="font-normal text-zinc-300">vs </span>{team2}
           </p>
           {score && <p className="font-mono text-[10px] text-zinc-500">{score}</p>}
         </div>
