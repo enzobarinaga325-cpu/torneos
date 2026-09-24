@@ -9,7 +9,6 @@ import { autoScheduleLeague } from "@/lib/league-autoschedule";
 import { uploadSiteImage } from "@/lib/images";
 import { DIAS_SEMANA } from "@/lib/league-logic";
 import { localDateStr, todayStr } from "@/lib/format";
-import { DayGrid } from "@/components/DayGrid";
 import { DailyFixtureStory } from "@/components/DailyFixtureStory";
 import { ParticipantsList } from "@/components/ParticipantsList";
 import { Badge, Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
@@ -311,6 +310,27 @@ export function TournamentManage() {
     load();
   }
 
+  /** Carga el resultado de un partido desde la grilla del día (cualquier categoría). Igual
+   *  que el guardado de resultado de la pestaña de la categoría: si es de fixture y define
+   *  la próxima ronda, la completa y reagenda sola. */
+  async function saveResult(
+    match: Match,
+    sets: Pick<Match, "set1_team1" | "set1_team2" | "set2_team1" | "set2_team2" | "set3_team1" | "set3_team2">,
+  ) {
+    const winner = matchWinner({ ...match, ...sets });
+    if (!winner) { setError("Cargá al menos 2 sets, y que no queden empatados, para definir un ganador."); return; }
+    const winner_id = winner === 1 ? match.team1_id : match.team2_id;
+    await supabase.from("matches").update({ ...sets, winner_id }).eq("id", match.id);
+    if (match.stage === "fixture" && match.next_match_id && winner_id) {
+      await supabase
+        .from("matches")
+        .update(match.next_match_slot === 1 ? { team1_id: winner_id } : { team2_id: winner_id })
+        .eq("id", match.next_match_id);
+      await autoScheduleTournament(id!);
+    }
+    load();
+  }
+
   const allTeamsById = useMemo(() => Object.fromEntries(allTeams.map((t) => [t.id, t])), [allTeams]);
   const categoriesById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories]);
   const teamsByCategory = useMemo(() => {
@@ -576,30 +596,9 @@ export function TournamentManage() {
       {availableGridDays.length > 0 && (
         <Card>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold">Grilla del día</h2>
-            <Select value={selectedGridDay} onChange={(e) => setSelectedGridDay(e.target.value)} className="w-auto">
-              {availableGridDays.map((d) => (
-                <option key={d} value={d}>{d}{d === todayStr() ? " (hoy)" : ""}</option>
-              ))}
-            </Select>
-          </div>
-          <DayGrid
-            date={selectedGridDay}
-            matches={allMatches}
-            courts={courts}
-            teamsById={allTeamsById}
-            categoriesById={categoriesById}
-            fileName={`grilla-${tournament.name}-${selectedGridDay}`}
-          />
-        </Card>
-      )}
-
-      {isLiga && availableGridDays.length > 0 && (
-        <Card>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="text-sm font-semibold">Día para Instagram</h2>
-              <p className="text-xs text-zinc-500">Cartel vertical con los partidos de ese día, por cancha, listo para subir a una historia.</p>
+              <h2 className="text-sm font-semibold">Grilla del día</h2>
+              <p className="text-xs text-zinc-500">Cargá resultados con el lápiz de cada partido. También se puede descargar como imagen para subir a una historia de Instagram.</p>
             </div>
             <Select value={selectedGridDay} onChange={(e) => setSelectedGridDay(e.target.value)} className="w-auto">
               {availableGridDays.map((d) => (
@@ -616,6 +615,8 @@ export function TournamentManage() {
             teamsById={allTeamsById}
             categoriesById={categoriesById}
             fileName={`dia-${tournament.name}-${selectedGridDay}`}
+            editable
+            onSaveResult={saveResult}
           />
         </Card>
       )}

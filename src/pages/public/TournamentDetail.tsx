@@ -9,7 +9,7 @@ import { useSiteBackground } from "@/lib/useSiteBackground";
 import { FixtureBracket } from "@/components/FixtureBracket";
 import { ZonesView } from "@/components/ZonesView";
 import { LeagueStandings } from "@/components/LeagueStandings";
-import { DayGrid } from "@/components/DayGrid";
+import { DailyFixtureStory } from "@/components/DailyFixtureStory";
 import { Select, Spinner } from "@/components/ui";
 
 export function TournamentDetail() {
@@ -124,14 +124,15 @@ export function TournamentDetail() {
               ))}
             </Select>
           </div>
-          <DayGrid
+          <DailyFixtureStory
+            tournamentName={tournament.name}
+            logoUrl={tournament.logo_url}
             date={selectedDay}
             matches={allMatches}
             courts={courts}
             teamsById={allTeamsById}
             categoriesById={categoriesById}
             fileName={`grilla-${tournament.slug}-${selectedDay}`}
-            showDownload={false}
           />
         </div>
       )}
