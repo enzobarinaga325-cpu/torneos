@@ -86,12 +86,12 @@ function MatchRow({
       </div>
 
       {editable && editing && (
-        <div data-html2canvas-ignore="true" className="ml-[52px] mt-1.5 flex flex-col gap-2 rounded-lg bg-zinc-50 p-2">
-          <div className="flex items-center gap-1.5">
+        <div data-html2canvas-ignore="true" className="mt-1.5 flex flex-col gap-2 rounded-lg bg-zinc-50 p-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <Select
               value={match.court_id ?? ""}
               onChange={(e) => onCourtChange?.(match, e.target.value)}
-              className="w-28 py-1 text-xs"
+              className="w-24 shrink-0 py-1 text-xs"
             >
               <option value="">Cancha</option>
               {courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -101,7 +101,7 @@ function MatchRow({
               type="datetime-local"
               defaultValue={match.scheduled_at ? toLocalDatetimeInput(match.scheduled_at) : ""}
               onBlur={(e) => onScheduleChange?.(match, e.target.value ? new Date(e.target.value).toISOString() : "")}
-              className="rounded-lg border border-zinc-300 px-2 py-1 text-xs outline-none focus:border-emerald-500"
+              className="min-w-0 flex-1 rounded-lg border border-zinc-300 px-2 py-1 text-xs outline-none focus:border-emerald-500"
             />
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -151,6 +151,7 @@ export function DailyFixtureStory({
   onSaveResult,
   onCourtChange,
   onScheduleChange,
+  showDownload = true,
 }: {
   tournamentName: string;
   logoUrl?: string | null;
@@ -164,6 +165,7 @@ export function DailyFixtureStory({
   onSaveResult?: (m: Match, sets: SetsDraft) => void;
   onCourtChange?: (m: Match, courtId: string) => void;
   onScheduleChange?: (m: Match, iso: string) => void;
+  showDownload?: boolean;
 }) {
   const { ref, download, downloading } = useDownloadImage(fileName);
 
@@ -180,15 +182,17 @@ export function DailyFixtureStory({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex justify-end">
-        <Button variant="secondary" onClick={download} disabled={downloading}>
-          {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-          Descargar imagen
-        </Button>
-      </div>
+      {showDownload && (
+        <div className="flex justify-end">
+          <Button variant="secondary" onClick={download} disabled={downloading}>
+            {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            Descargar imagen
+          </Button>
+        </div>
+      )}
 
       <div className="overflow-hidden rounded-xl border border-zinc-200">
-        <div ref={ref} className="mx-auto w-[480px] bg-gradient-to-b from-zinc-950 via-zinc-950 to-emerald-950">
+        <div ref={ref} className="mx-auto w-full max-w-[480px] bg-gradient-to-b from-zinc-950 via-zinc-950 to-emerald-950">
           <div className="flex flex-col items-center px-7 pb-3 pt-5">
             {logoUrl && (
               // eslint-disable-next-line jsx-a11y/alt-text

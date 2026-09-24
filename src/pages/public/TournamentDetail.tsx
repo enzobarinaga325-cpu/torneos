@@ -133,6 +133,7 @@ export function TournamentDetail() {
             teamsById={allTeamsById}
             categoriesById={categoriesById}
             fileName={`grilla-${tournament.slug}-${selectedDay}`}
+            showDownload={false}
           />
         </div>
       )}
