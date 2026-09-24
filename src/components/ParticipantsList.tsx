@@ -27,7 +27,7 @@ export function ParticipantsList({
               <h2 className="mb-2 border-b border-zinc-300 pb-1 text-lg font-semibold">
                 {cat.name} ({teams.length})
               </h2>
-              <ol className="list-decimal columns-2 gap-8 pl-6 text-sm leading-relaxed">
+              <ol className="list-decimal pl-6 text-sm leading-relaxed">
                 {teams.map((t) => (
                   <li key={t.id} className="break-inside-avoid">{t.name}</li>
                 ))}
