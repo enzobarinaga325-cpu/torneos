@@ -131,6 +131,18 @@ export function CategoryManage() {
     load();
   }
 
+  /** Solo para liga: las zonas son opcionales ahí, así que se pueden sacar para volver a un
+   *  todos-contra-todos único. En modo torneo las zonas son parte necesaria del flujo
+   *  zona→fixture, así que no se ofrece quitarlas. */
+  async function removeZones() {
+    if (!confirm("¿Quitar las zonas de esta categoría? Los equipos vuelven a quedar sin zona y se borran TODOS los partidos de liga ya generados (jugados o no). Después generás de nuevo el fixture como un solo todos-contra-todos.")) return;
+    setBusy(true);
+    setError(null);
+    await supabase.from("zones").delete().eq("category_id", categoryId!);
+    setBusy(false);
+    load();
+  }
+
   async function generateZoneMatches() {
     if (zones.length === 0) { setError("Generá las zonas primero."); return; }
     if (hasZoneMatches && !confirm("Ya hay partidos de zona cargados. Esto los borra y genera de nuevo (se pierden los resultados). ¿Seguir?")) return;
@@ -211,36 +223,50 @@ export function CategoryManage() {
   }
 
   // ============ LIGA ============
+  /**
+   * Arma el fixture de liga. Si hay zonas cargadas (opcional, se generan desde "Equipos"),
+   * cada zona juega su propio todos-contra-todos por separado, con su propia tabla de
+   * posiciones — igual que las zonas del modo torneo, pero sin cuadro eliminatorio después.
+   * Sin zonas, es un solo todos-contra-todos entre todos los equipos, como hasta ahora.
+   */
   async function generateLeagueFixture() {
     if (teams.length < 2) { setError("Cargá al menos 2 equipos primero."); return; }
     if (hasLigaMatches && !confirm("Ya hay un fixture de liga cargado. Esto lo borra y arma uno nuevo (se pierden los resultados). ¿Seguir?")) return;
 
-    const journeys = roundRobinJourneys(teams.map((t) => t.id), idaVuelta);
-    if (journeys.length === 0) { setError("Hacen falta al menos 2 equipos para armar el fixture de liga."); return; }
+    const groups = zones.length > 0
+      ? zones.map((zone) => ({ zoneId: zone.id as string | null, teamIds: teams.filter((t) => t.zone_id === zone.id).map((t) => t.id) }))
+      : [{ zoneId: null as string | null, teamIds: teams.map((t) => t.id) }];
+
+    const zonasSinEquipos = zones.length > 0 && groups.some((g) => g.teamIds.length < 2);
+    if (zonasSinEquipos) { setError("Cada zona necesita al menos 2 equipos para armar su fixture."); return; }
 
     setBusy(true);
     setError(null);
     await supabase.from("tournaments").update({ ida_vuelta: idaVuelta }).eq("id", tournamentId!);
     await supabase.from("matches").delete().eq("category_id", categoryId!).eq("stage", "liga");
 
-    const idaJornadas = idaVuelta ? journeys.length / 2 : journeys.length;
-    for (let j = 0; j < journeys.length; j++) {
-      const pairs = journeys[j];
-      if (pairs.length === 0) continue;
-      const isVuelta = j >= idaJornadas;
-      const jornadaNum = isVuelta ? j - idaJornadas + 1 : j + 1;
-      const roundName = isVuelta ? `Jornada ${jornadaNum} (vuelta)` : `Jornada ${jornadaNum}`;
-      await supabase.from("matches").insert(
-        pairs.map(([a, b], i) => ({
-          category_id: categoryId,
-          stage: "liga",
-          round_name: roundName,
-          round_order: j,
-          position: i,
-          team1_id: a,
-          team2_id: b,
-        })),
-      );
+    for (const group of groups) {
+      const journeys = roundRobinJourneys(group.teamIds, idaVuelta);
+      const idaJornadas = idaVuelta ? journeys.length / 2 : journeys.length;
+      for (let j = 0; j < journeys.length; j++) {
+        const pairs = journeys[j];
+        if (pairs.length === 0) continue;
+        const isVuelta = j >= idaJornadas;
+        const jornadaNum = isVuelta ? j - idaJornadas + 1 : j + 1;
+        const roundName = isVuelta ? `Jornada ${jornadaNum} (vuelta)` : `Jornada ${jornadaNum}`;
+        await supabase.from("matches").insert(
+          pairs.map(([a, b], i) => ({
+            category_id: categoryId,
+            stage: "liga",
+            zone_id: group.zoneId,
+            round_name: roundName,
+            round_order: j,
+            position: i,
+            team1_id: a,
+            team2_id: b,
+          })),
+        );
+      }
     }
     // Ya nacen con las dos parejas conocidas: se agendan de una según los horarios
     // semanales de la liga (si ya están cargados).
@@ -404,17 +430,20 @@ export function CategoryManage() {
           <Card>
             <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
               <h2 className="text-sm font-semibold">Equipos ({teams.length})</h2>
-              {!isLiga && (
-                <div className="flex items-end gap-2">
-                  <div className="w-40">
-                    <Label>Equipos por zona</Label>
-                    <Input type="number" min={2} value={teamsPerZone} onChange={(e) => setTeamsPerZone(e.target.value)} />
-                  </div>
-                  <Button onClick={generateZones} disabled={busy}>
-                    <Shuffle className="h-3.5 w-3.5" /> Generar zonas
-                  </Button>
+              <div className="flex items-end gap-2">
+                <div className="w-40">
+                  <Label>Equipos por zona</Label>
+                  <Input type="number" min={2} value={teamsPerZone} onChange={(e) => setTeamsPerZone(e.target.value)} />
                 </div>
-              )}
+                <Button onClick={generateZones} disabled={busy}>
+                  <Shuffle className="h-3.5 w-3.5" /> Generar zonas
+                </Button>
+                {isLiga && zones.length > 0 && (
+                  <Button variant="secondary" onClick={removeZones} disabled={busy}>
+                    Quitar zonas
+                  </Button>
+                )}
+              </div>
             </div>
             {teams.length === 0 ? (
               <p className="text-xs text-zinc-500">Todavía no cargaste equipos.</p>
@@ -633,6 +662,37 @@ export function CategoryManage() {
 
           {!hasLigaMatches ? (
             <Card className="text-center text-sm text-zinc-500">Todavía no se generó el fixture de esta liga.</Card>
+          ) : zones.length > 0 ? (
+            zones.map((zone) => {
+              const zoneTeamIds = teams.filter((t) => t.zone_id === zone.id).map((t) => t.id);
+              const zoneMatches2 = ligaMatches.filter((m) => m.zone_id === zone.id);
+              if (zoneMatches2.length === 0) return null;
+              return (
+                <div key={zone.id} className="flex flex-col gap-4 rounded-xl border border-zinc-200 p-4">
+                  <h3 className="font-semibold">{zone.name}</h3>
+                  <div>
+                    <h4 className="mb-2 text-sm font-semibold text-zinc-700">Tabla de posiciones</h4>
+                    <LeagueStandings teamIds={zoneTeamIds} matches={zoneMatches2} teamsById={teamsById} fileName={`posiciones-${category.name}-${zone.name}`} />
+                  </div>
+                  <div>
+                    <h4 className="mb-2 text-sm font-semibold text-zinc-700">Fixture por jornada</h4>
+                    <div className="flex gap-4 overflow-x-auto pb-2">
+                      {[...new Set(zoneMatches2.map((m) => m.round_order))].sort((a, b) => (a ?? 0) - (b ?? 0)).map((ro) => {
+                        const roundMatches = zoneMatches2.filter((m) => m.round_order === ro);
+                        return (
+                          <div key={ro} className="flex min-w-[260px] flex-col gap-2">
+                            <h5 className="text-sm font-semibold text-zinc-700">{roundMatches[0]?.round_name}</h5>
+                            {roundMatches.map((m) => (
+                              <MatchRow key={m.id} match={m} teams={teams} courts={courts} onTeamChange={updateMatchTeam} onCourtChange={updateMatchCourt} onScheduleChange={updateMatchSchedule} onSaveResult={saveResult} compact />
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
           ) : (
             <>
               <div>
