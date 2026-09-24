@@ -10,31 +10,11 @@ import { uploadSiteImage } from "@/lib/images";
 import { DIAS_SEMANA } from "@/lib/league-logic";
 import { localDateStr, todayStr } from "@/lib/format";
 import { DayGrid } from "@/components/DayGrid";
-import { WeeklyFixtureStory } from "@/components/WeeklyFixtureStory";
+import { DailyFixtureStory } from "@/components/DailyFixtureStory";
 import { Badge, Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
 
 /** Lunes a domingo, para mostrarlos en el orden natural de la semana (día 0 = domingo). */
 const LEAGUE_DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
-
-/** Lunes ("YYYY-MM-DD") de la semana que contiene `dateStr`. */
-function mondayOf(dateStr: string): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  const diff = (dt.getDay() + 6) % 7; // días desde el lunes de esa semana
-  dt.setDate(dt.getDate() - diff);
-  return localDateStr(dt);
-}
-
-/** Los 7 días ("YYYY-MM-DD") de lunes a domingo, a partir de un lunes. */
-function weekDatesFrom(mondayStr: string): string[] {
-  const [y, m, d] = mondayStr.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  return Array.from({ length: 7 }, (_, i) => {
-    const day = new Date(dt);
-    day.setDate(dt.getDate() + i);
-    return localDateStr(day);
-  });
-}
 
 const statusLabels: Record<string, { label: string; color: "zinc" | "green" | "amber" }> = {
   armando: { label: "Armando", color: "amber" },
@@ -66,7 +46,6 @@ export function TournamentManage() {
   const [allMatches, setAllMatches] = useState<Match[]>([]);
   const [leagueSlots, setLeagueSlots] = useState<LeagueSlot[]>([]);
   const [selectedGridDay, setSelectedGridDay] = useState("");
-  const [selectedWeek, setSelectedWeek] = useState("");
   const [courtName, setCourtName] = useState("");
   const [categoryName, setCategoryName] = useState("");
   const [matchMinutes, setMatchMinutes] = useState("60");
@@ -101,7 +80,6 @@ export function TournamentManage() {
       const dates = [...new Set((allM ?? []).map((m) => localDateStr(m.scheduled_at as string)))].sort();
       const today = todayStr();
       setSelectedGridDay((prev) => prev || dates.find((d) => d >= today) || dates[0] || "");
-      setSelectedWeek((prev) => prev || mondayOf(dates.find((d) => d >= today) ?? dates[0] ?? today));
     }
   }
 
@@ -337,10 +315,6 @@ export function TournamentManage() {
   const availableGridDays = useMemo(
     () => [...new Set(allMatches.map((m) => localDateStr(m.scheduled_at as string)))].sort(),
     [allMatches],
-  );
-  const availableWeeks = useMemo(
-    () => [...new Set(availableGridDays.map(mondayOf))].sort(),
-    [availableGridDays],
   );
 
   if (tournament === undefined) {
@@ -613,28 +587,28 @@ export function TournamentManage() {
         </Card>
       )}
 
-      {isLiga && availableWeeks.length > 0 && (
+      {isLiga && availableGridDays.length > 0 && (
         <Card>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="text-sm font-semibold">Semana para Instagram</h2>
-              <p className="text-xs text-zinc-500">Cartel vertical con todos los partidos de la semana, por día y cancha, listo para subir a una historia.</p>
+              <h2 className="text-sm font-semibold">Día para Instagram</h2>
+              <p className="text-xs text-zinc-500">Cartel vertical con los partidos de ese día, por cancha, listo para subir a una historia.</p>
             </div>
-            <Select value={selectedWeek} onChange={(e) => setSelectedWeek(e.target.value)} className="w-auto">
-              {availableWeeks.map((w) => (
-                <option key={w} value={w}>Semana del {w}</option>
+            <Select value={selectedGridDay} onChange={(e) => setSelectedGridDay(e.target.value)} className="w-auto">
+              {availableGridDays.map((d) => (
+                <option key={d} value={d}>{d}{d === todayStr() ? " (hoy)" : ""}</option>
               ))}
             </Select>
           </div>
-          <WeeklyFixtureStory
+          <DailyFixtureStory
             tournamentName={tournament.name}
             logoUrl={tournament.logo_url}
-            weekDates={weekDatesFrom(selectedWeek)}
+            date={selectedGridDay}
             matches={allMatches}
             courts={courts}
             teamsById={allTeamsById}
             categoriesById={categoriesById}
-            fileName={`semana-${tournament.name}-${selectedWeek}`}
+            fileName={`dia-${tournament.name}-${selectedGridDay}`}
           />
         </Card>
       )}
