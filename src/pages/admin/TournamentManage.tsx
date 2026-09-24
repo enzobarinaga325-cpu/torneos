@@ -331,6 +331,81 @@ export function TournamentManage() {
     load();
   }
 
+  /**
+   * Cambia la cancha y/o el horario de un partido desde la grilla del día (cualquier
+   * categoría) — misma lógica de intercambio y detección de cruce que la pestaña de la
+   * categoría: si el destino ya lo ocupa otro partido, se intercambian; si alguno de los
+   * dos equipos ya tiene otro partido a esa hora, se avisa y no se mueve nada.
+   */
+  async function updateMatchSlot(match: Match, patch: { court_id?: string | null; scheduled_at?: string | null }) {
+    const newCourtId = "court_id" in patch ? patch.court_id ?? null : match.court_id;
+    const newScheduledAt = "scheduled_at" in patch ? patch.scheduled_at ?? null : match.scheduled_at;
+
+    if (newCourtId && newScheduledAt) {
+      const teamIds = [match.team1_id, match.team2_id].filter((tid): tid is string => !!tid);
+
+      const { data: occupantRows } = await supabase
+        .from("matches")
+        .select("id, court_id, team1_id, team2_id")
+        .eq("scheduled_at", newScheduledAt)
+        .eq("court_id", newCourtId)
+        .neq("id", match.id);
+      const occupant = (occupantRows ?? [])[0];
+
+      const { data: sameTime } = teamIds.length > 0
+        ? await supabase
+            .from("matches")
+            .select("id, court_id, team1_id, team2_id")
+            .eq("scheduled_at", newScheduledAt)
+            .neq("id", match.id)
+            .or(teamIds.flatMap((tid) => [`team1_id.eq.${tid}`, `team2_id.eq.${tid}`]).join(","))
+        : { data: [] };
+
+      // Cualquier otro partido de estos equipos a esa hora, en OTRA cancha, es un cruce real
+      // y no se arregla intercambiando lugares — hay que elegir otro horario.
+      const teamClash = (sameTime ?? []).find((m) => m.id !== occupant?.id);
+      if (teamClash) {
+        setError("Uno de estos dos equipos ya tiene otro partido agendado a esa misma hora — elegí otro horario o cancha.");
+        return;
+      }
+
+      if (occupant) {
+        if (match.scheduled_at) {
+          const occupantTeamIds = [occupant.team1_id, occupant.team2_id].filter((tid): tid is string => !!tid);
+          const { data: occupantClash } = occupantTeamIds.length > 0
+            ? await supabase
+                .from("matches")
+                .select("id")
+                .eq("scheduled_at", match.scheduled_at)
+                .neq("id", occupant.id)
+                .neq("id", match.id)
+                .or(occupantTeamIds.flatMap((tid) => [`team1_id.eq.${tid}`, `team2_id.eq.${tid}`]).join(","))
+            : { data: [] };
+          if (occupantClash && occupantClash.length > 0) {
+            setError("No se puede intercambiar: el partido que ocupa ese lugar tiene un equipo que ya juega a la hora anterior de este partido.");
+            return;
+          }
+        }
+        await supabase
+          .from("matches")
+          .update({ court_id: match.court_id, scheduled_at: match.scheduled_at, auto_scheduled: false })
+          .eq("id", occupant.id);
+      }
+    }
+
+    setError(null);
+    await supabase.from("matches").update({ court_id: newCourtId, scheduled_at: newScheduledAt, auto_scheduled: false }).eq("id", match.id);
+    load();
+  }
+
+  async function updateMatchCourt(match: Match, courtId: string) {
+    await updateMatchSlot(match, { court_id: courtId || null });
+  }
+
+  async function updateMatchSchedule(match: Match, isoDatetime: string) {
+    await updateMatchSlot(match, { scheduled_at: isoDatetime || null });
+  }
+
   const allTeamsById = useMemo(() => Object.fromEntries(allTeams.map((t) => [t.id, t])), [allTeams]);
   const categoriesById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories]);
   const teamsByCategory = useMemo(() => {
@@ -617,6 +692,8 @@ export function TournamentManage() {
             fileName={`dia-${tournament.name}-${selectedGridDay}`}
             editable
             onSaveResult={saveResult}
+            onCourtChange={updateMatchCourt}
+            onScheduleChange={updateMatchSchedule}
           />
         </Card>
       )}

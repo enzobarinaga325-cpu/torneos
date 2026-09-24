@@ -292,6 +292,14 @@ export function CategoryManage() {
     if (newCourtId && newScheduledAt) {
       const teamIds = [match.team1_id, match.team2_id].filter((tid): tid is string => !!tid);
 
+      const { data: occupantRows } = await supabase
+        .from("matches")
+        .select("id, court_id, team1_id, team2_id")
+        .eq("scheduled_at", newScheduledAt)
+        .eq("court_id", newCourtId)
+        .neq("id", match.id);
+      const occupant = (occupantRows ?? [])[0];
+
       const { data: sameTime } = teamIds.length > 0
         ? await supabase
             .from("matches")
@@ -301,7 +309,6 @@ export function CategoryManage() {
             .or(teamIds.flatMap((tid) => [`team1_id.eq.${tid}`, `team2_id.eq.${tid}`]).join(","))
         : { data: [] };
 
-      const occupant = (sameTime ?? []).find((m) => m.court_id === newCourtId);
       // Cualquier otro partido de estos equipos a esa hora, en OTRA cancha, es un cruce real
       // y no se arregla intercambiando lugares — hay que elegir otro horario.
       const teamClash = (sameTime ?? []).find((m) => m.id !== occupant?.id);

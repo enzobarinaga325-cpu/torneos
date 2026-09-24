@@ -2,9 +2,9 @@ import { useState } from "react";
 import { Download, Loader2, Pencil } from "lucide-react";
 import type { Category, Court, Match, Team } from "@/lib/types";
 import { useDownloadImage } from "@/lib/useDownloadImage";
-import { localDateStr } from "@/lib/format";
+import { localDateStr, toLocalDatetimeInput } from "@/lib/format";
 import { matchWinner } from "@/lib/tournament-logic";
-import { Button } from "./ui";
+import { Button, Select } from "./ui";
 
 const DIA_CORTO = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 
@@ -28,14 +28,17 @@ function scoreLine(m: Match): string {
 }
 
 function MatchRow({
-  match, category, team1, team2, editable, onSaveResult,
+  match, category, team1, team2, courts, editable, onSaveResult, onCourtChange, onScheduleChange,
 }: {
   match: Match;
   category?: string;
   team1: string;
   team2: string;
+  courts: Court[];
   editable?: boolean;
   onSaveResult?: (m: Match, sets: SetsDraft) => void;
+  onCourtChange?: (m: Match, courtId: string) => void;
+  onScheduleChange?: (m: Match, iso: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [sets, setSets] = useState<SetsDraft>({
@@ -83,27 +86,46 @@ function MatchRow({
       </div>
 
       {editable && editing && (
-        <div data-html2canvas-ignore="true" className="ml-[52px] mt-1.5 flex flex-wrap items-center gap-2 rounded-lg bg-zinc-50 p-2">
-          {(["set1", "set2", "set3"] as const).map((s) => (
-            <div key={s} className="flex items-center gap-1">
-              <input
-                type="number" min={0}
-                value={sets[`${s}_team1`] ?? ""}
-                onChange={(e) => setField(`${s}_team1`, e.target.value)}
-                className="w-9 rounded border border-zinc-300 px-1 py-0.5 text-center text-xs"
-              />
-              <span className="text-zinc-300">-</span>
-              <input
-                type="number" min={0}
-                value={sets[`${s}_team2`] ?? ""}
-                onChange={(e) => setField(`${s}_team2`, e.target.value)}
-                className="w-9 rounded border border-zinc-300 px-1 py-0.5 text-center text-xs"
-              />
-            </div>
-          ))}
-          <Button variant="secondary" className="px-2 py-1 text-xs" onClick={save}>
-            Guardar
-          </Button>
+        <div data-html2canvas-ignore="true" className="ml-[52px] mt-1.5 flex flex-col gap-2 rounded-lg bg-zinc-50 p-2">
+          <div className="flex items-center gap-1.5">
+            <Select
+              value={match.court_id ?? ""}
+              onChange={(e) => onCourtChange?.(match, e.target.value)}
+              className="w-28 py-1 text-xs"
+            >
+              <option value="">Cancha</option>
+              {courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+            <input
+              key={match.scheduled_at ?? "sin-horario"}
+              type="datetime-local"
+              defaultValue={match.scheduled_at ? toLocalDatetimeInput(match.scheduled_at) : ""}
+              onBlur={(e) => onScheduleChange?.(match, e.target.value ? new Date(e.target.value).toISOString() : "")}
+              className="rounded-lg border border-zinc-300 px-2 py-1 text-xs outline-none focus:border-emerald-500"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {(["set1", "set2", "set3"] as const).map((s) => (
+              <div key={s} className="flex items-center gap-1">
+                <input
+                  type="number" min={0}
+                  value={sets[`${s}_team1`] ?? ""}
+                  onChange={(e) => setField(`${s}_team1`, e.target.value)}
+                  className="w-9 rounded border border-zinc-300 px-1 py-0.5 text-center text-xs"
+                />
+                <span className="text-zinc-300">-</span>
+                <input
+                  type="number" min={0}
+                  value={sets[`${s}_team2`] ?? ""}
+                  onChange={(e) => setField(`${s}_team2`, e.target.value)}
+                  className="w-9 rounded border border-zinc-300 px-1 py-0.5 text-center text-xs"
+                />
+              </div>
+            ))}
+            <Button variant="secondary" className="px-2 py-1 text-xs" onClick={save}>
+              Guardar
+            </Button>
+          </div>
         </div>
       )}
     </div>
@@ -127,6 +149,8 @@ export function DailyFixtureStory({
   fileName,
   editable = false,
   onSaveResult,
+  onCourtChange,
+  onScheduleChange,
 }: {
   tournamentName: string;
   logoUrl?: string | null;
@@ -138,6 +162,8 @@ export function DailyFixtureStory({
   fileName: string;
   editable?: boolean;
   onSaveResult?: (m: Match, sets: SetsDraft) => void;
+  onCourtChange?: (m: Match, courtId: string) => void;
+  onScheduleChange?: (m: Match, iso: string) => void;
 }) {
   const { ref, download, downloading } = useDownloadImage(fileName);
 
@@ -193,8 +219,11 @@ export function DailyFixtureStory({
                           category={categoriesById[m.category_id]?.name}
                           team1={teamsById[m.team1_id ?? ""]?.name ?? "?"}
                           team2={teamsById[m.team2_id ?? ""]?.name ?? "?"}
+                          courts={courts}
                           editable={editable}
                           onSaveResult={onSaveResult}
+                          onCourtChange={onCourtChange}
+                          onScheduleChange={onScheduleChange}
                         />
                       ))}
                     </div>
