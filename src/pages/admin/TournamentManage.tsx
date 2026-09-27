@@ -220,7 +220,9 @@ export function TournamentManage() {
   }
 
   /** Tildar un día crea de una un horario para CADA cancha (19 a 23hs por defecto, editable
-   *  después cancha por cancha); destildarlo borra los horarios de todas las canchas ese día. */
+   *  después cancha por cancha); destildarlo borra los horarios de todas las canchas ese día
+   *  — como el checkbox queda pegado arriba del campo de hora del día siguiente, es fácil
+   *  tocarlo sin querer al ir a editar otro día, así que confirma antes de borrar. */
   async function toggleLeagueDay(diaSemana: number, enabled: boolean) {
     if (enabled) {
       if (courts.length === 0) { setError("Cargá al menos una cancha primero."); return; }
@@ -229,7 +231,9 @@ export function TournamentManage() {
       );
     } else {
       const existingIds = leagueSlots.filter((s) => s.dia_semana === diaSemana).map((s) => s.id);
-      if (existingIds.length > 0) await supabase.from("horarios_liga").delete().in("id", existingIds);
+      if (existingIds.length === 0) return;
+      if (!confirm(`¿Borrar el horario de ${DIAS_SEMANA[diaSemana]} en todas las canchas? Los partidos que ya tenía agendados ahí se van a tener que reacomodar.`)) return;
+      await supabase.from("horarios_liga").delete().in("id", existingIds);
     }
     load();
   }
@@ -239,7 +243,9 @@ export function TournamentManage() {
       await supabase.from("horarios_liga").insert({ tournament_id: id, court_id: courtId, dia_semana: diaSemana, hora_inicio: "19:00", hora_fin: "23:00" });
     } else {
       const existing = leagueSlotFor(diaSemana, courtId);
-      if (existing) await supabase.from("horarios_liga").delete().eq("id", existing.id);
+      if (!existing) return;
+      if (!confirm(`¿Borrar el horario de ${DIAS_SEMANA[diaSemana]} en esta cancha? Los partidos que ya tenía agendados ahí se van a tener que reacomodar.`)) return;
+      await supabase.from("horarios_liga").delete().eq("id", existing.id);
     }
     load();
   }
