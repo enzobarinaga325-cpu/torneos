@@ -243,9 +243,13 @@ function toDateTime(date: string, time: string): Date {
   return d;
 }
 
-/** Clave única de un turno cancha+horario, para detectar choques. */
+/** Clave única de un turno cancha+horario. Pasa `scheduledAt` por `Date` antes de armar la
+ *  clave a propósito: un timestamp leído de la base viene como "...+00:00" pero uno recién
+ *  generado con `.toISOString()` viene como "....000Z" — representan el mismo instante pero
+ *  son strings distintos, así que comparar el texto crudo hacía que "¿está ocupado?" diera
+ *  siempre que no, aunque hubiera otro partido ahí. */
 export function slotKey(courtId: string, scheduledAt: string): string {
-  return `${courtId}|${scheduledAt}`;
+  return `${courtId}|${new Date(scheduledAt).toISOString()}`;
 }
 
 /** true si ese turno puntual (cancha + horario exacto) está cancelado — por lluvia u otro

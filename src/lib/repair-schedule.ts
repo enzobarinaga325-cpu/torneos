@@ -46,10 +46,20 @@ export async function repairMatches(tournamentId: string, matchIds: string[]): P
     .in("category_id", categoryIds)
     .not("scheduled_at", "is", null);
 
+  // Normaliza el formato del timestamp apenas se lee de la base ("...+00:00") a uno
+  // canónico ("....000Z") — el mismo que generan los candidatos nuevos con
+  // `.toISOString()` — para que comparar por igualdad de string (busyAt, busyDay) funcione
+  // bien de entrada. `slotKey` ya normaliza por su cuenta, pero acá conviene hacerlo una
+  // sola vez arriba de todo en vez de en cada lugar que arma una clave.
+  const normalized = (allScheduled ?? []).map((m) => ({
+    ...m,
+    scheduled_at: m.scheduled_at ? new Date(m.scheduled_at as string).toISOString() : null,
+  }));
+
   const toRepairIds = new Set(matchIds);
-  const others = (allScheduled ?? []).filter((m) => !toRepairIds.has(m.id));
+  const others = normalized.filter((m) => !toRepairIds.has(m.id));
   // Un partido que ya se jugó no se toca nunca, aunque lo hayan pasado en la lista.
-  const toRepair = (allScheduled ?? []).filter((m) => toRepairIds.has(m.id) && m.winner_id == null);
+  const toRepair = normalized.filter((m) => toRepairIds.has(m.id) && m.winner_id == null);
   if (toRepair.length === 0) return { repaired: 0, unscheduled: 0 };
 
   const occupied = new Set(others.map((m) => slotKey(m.court_id as string, m.scheduled_at as string)));
