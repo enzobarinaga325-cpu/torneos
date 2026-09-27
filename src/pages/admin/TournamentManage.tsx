@@ -6,6 +6,7 @@ import type { Category, Court, LeagueSlot, Match, Modalidad, ScheduleBlackout, T
 import { matchWinner } from "@/lib/tournament-logic";
 import { autoScheduleTournament } from "@/lib/autoschedule";
 import { autoScheduleLeague } from "@/lib/league-autoschedule";
+import { fillScheduleGaps } from "@/lib/fill-gaps";
 import { cancelDay, cancelTurn, removeBlackout } from "@/lib/blackouts";
 import { uploadSiteImage } from "@/lib/images";
 import { DIAS_SEMANA } from "@/lib/league-logic";
@@ -265,6 +266,22 @@ export function TournamentManage() {
       setError("No hay partidos de liga pendientes de horario (o ya están todos agendados).");
     } else if (unscheduled > 0) {
       setError(`Se agendaron ${scheduled} partidos. No entraron ${unscheduled} más: agregá más horarios semanales o canchas.`);
+    }
+    load();
+  }
+
+  /** A diferencia de "Autocompletar horarios" (que resetea y reparte TODO de nuevo), esto
+   *  solo rellena los turnos habilitados que quedaron vacíos — trayendo, para cada hueco, el
+   *  último partido del fixture que pueda jugarse ahí — sin reordenar el resto. */
+  async function fillGapsClick() {
+    setScheduling(true);
+    setError(null);
+    const { filled, remainingGaps } = await fillScheduleGaps(id!);
+    setScheduling(false);
+    if (filled === 0 && remainingGaps === 0) {
+      setError("No hay huecos para rellenar.");
+    } else if (remainingGaps > 0) {
+      setError(`Se rellenaron ${filled} huecos. Quedaron ${remainingGaps} sin poder llenar (ningún partido pendiente encaja ahí).`);
     }
     load();
   }
@@ -686,6 +703,9 @@ export function TournamentManage() {
           </Button>
           <Button onClick={autoScheduleLeagueClick} disabled={scheduling}>
             <CalendarClock className="h-3.5 w-3.5" /> {scheduling ? "Agendando…" : "Autocompletar horarios"}
+          </Button>
+          <Button variant="secondary" onClick={fillGapsClick} disabled={scheduling}>
+            <RefreshCw className="h-3.5 w-3.5" /> {scheduling ? "Agendando…" : "Rellenar huecos"}
           </Button>
         </div>
 
