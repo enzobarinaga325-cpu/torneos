@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Pencil, Plus, Shuffle, Trash2, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { Category, Court, Match, Team, Tournament, Zone } from "@/lib/types";
+import type { Category, Court, LeagueSlot, Match, Team, Tournament, TournamentDay, Zone } from "@/lib/types";
 import { buildBracket, computeStandings, matchWinner, proposeZones, roundRobinPairs } from "@/lib/tournament-logic";
 import { roundRobinJourneys } from "@/lib/league-logic";
-import { toLocalDatetimeInput } from "@/lib/format";
+import { toLocalDatetimeInput, localDateStr } from "@/lib/format";
 import { autoScheduleTournament } from "@/lib/autoschedule";
 import { autoScheduleLeague } from "@/lib/league-autoschedule";
+import { validateLeagueSlotTime, validateTournamentDaySlotTime } from "@/lib/slot-validation";
 import { FixtureBracket } from "@/components/FixtureBracket";
 import { ZonesView } from "@/components/ZonesView";
 import { LeagueStandings } from "@/components/LeagueStandings";
@@ -23,6 +24,8 @@ export function CategoryManage() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [courts, setCourts] = useState<Court[]>([]);
+  const [leagueSlots, setLeagueSlots] = useState<LeagueSlot[]>([]);
+  const [days, setDays] = useState<TournamentDay[]>([]);
   const [tab, setTab] = useState<Tab>("equipos");
 
   const [teamName, setTeamName] = useState("");
@@ -35,13 +38,15 @@ export function CategoryManage() {
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    const [{ data: tour }, { data: cat }, { data: t }, { data: z }, { data: m }, { data: co }] = await Promise.all([
+    const [{ data: tour }, { data: cat }, { data: t }, { data: z }, { data: m }, { data: co }, { data: ls }, { data: d }] = await Promise.all([
       supabase.from("tournaments").select("*").eq("id", tournamentId!).maybeSingle(),
       supabase.from("categories").select("*").eq("id", categoryId!).maybeSingle(),
       supabase.from("teams").select("*").eq("category_id", categoryId!).order("name"),
       supabase.from("zones").select("*").eq("category_id", categoryId!).order("position"),
       supabase.from("matches").select("*").eq("category_id", categoryId!).order("round_order").order("position"),
       supabase.from("courts").select("*").eq("tournament_id", tournamentId!).order("name"),
+      supabase.from("horarios_liga").select("*").eq("tournament_id", tournamentId!),
+      supabase.from("tournament_days").select("*").eq("tournament_id", tournamentId!),
     ]);
     setTournament(tour ?? null);
     setCategory(cat ?? null);
@@ -49,6 +54,8 @@ export function CategoryManage() {
     setZones(z ?? []);
     setMatches((m as Match[]) ?? []);
     setCourts(co ?? []);
+    setLeagueSlots(ls ?? []);
+    setDays(d ?? []);
     if (tour) setIdaVuelta(tour.ida_vuelta);
   }
 
@@ -290,6 +297,15 @@ export function CategoryManage() {
     const newScheduledAt = "scheduled_at" in patch ? patch.scheduled_at ?? null : match.scheduled_at;
 
     if (newCourtId && newScheduledAt) {
+      const duration = Math.max(15, tournament?.default_match_minutes ?? 60);
+      const slotCheck = match.stage === "liga"
+        ? validateLeagueSlotTime(newScheduledAt, newCourtId, leagueSlots, duration)
+        : validateTournamentDaySlotTime(newScheduledAt, days.find((d) => d.date === localDateStr(newScheduledAt)), duration);
+      if (!slotCheck.ok) {
+        setError(slotCheck.message ?? "Ese horario no es válido.");
+        return;
+      }
+
       const teamIds = [match.team1_id, match.team2_id].filter((tid): tid is string => !!tid);
 
       const { data: occupantRows } = await supabase

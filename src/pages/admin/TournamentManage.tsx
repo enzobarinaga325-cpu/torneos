@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, CalendarClock, CheckCircle2, Image as ImageIcon, Printer, RefreshCw, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, Image as ImageIcon, Printer, RefreshCw, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, LeagueSlot, Match, Modalidad, Team, Tournament, TournamentDay } from "@/lib/types";
 import { matchWinner } from "@/lib/tournament-logic";
@@ -8,6 +8,7 @@ import { autoScheduleTournament } from "@/lib/autoschedule";
 import { autoScheduleLeague } from "@/lib/league-autoschedule";
 import { uploadSiteImage } from "@/lib/images";
 import { DIAS_SEMANA } from "@/lib/league-logic";
+import { validateLeagueSlotTime, validateTournamentDaySlotTime } from "@/lib/slot-validation";
 import { localDateStr, todayStr } from "@/lib/format";
 import { DailyFixtureStory } from "@/components/DailyFixtureStory";
 import { ParticipantsList } from "@/components/ParticipantsList";
@@ -52,6 +53,7 @@ export function TournamentManage() {
   const [scheduling, setScheduling] = useState(false);
   const [pendingModalidad, setPendingModalidad] = useState<Modalidad | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [horariosOpen, setHorariosOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
@@ -342,6 +344,15 @@ export function TournamentManage() {
     const newScheduledAt = "scheduled_at" in patch ? patch.scheduled_at ?? null : match.scheduled_at;
 
     if (newCourtId && newScheduledAt) {
+      const duration = Math.max(15, tournament?.default_match_minutes ?? 60);
+      const slotCheck = match.stage === "liga"
+        ? validateLeagueSlotTime(newScheduledAt, newCourtId, leagueSlots, duration)
+        : validateTournamentDaySlotTime(newScheduledAt, days.find((d) => d.date === localDateStr(newScheduledAt)), duration);
+      if (!slotCheck.ok) {
+        setError(slotCheck.message ?? "Ese horario no es válido.");
+        return;
+      }
+
       const teamIds = [match.team1_id, match.team2_id].filter((tid): tid is string => !!tid);
 
       const { data: occupantRows } = await supabase
@@ -527,13 +538,25 @@ export function TournamentManage() {
 
       {!isLiga && (
       <Card>
-        <h2 className="mb-1 text-sm font-semibold">Horarios</h2>
-        <p className="mb-3 text-xs text-zinc-500">
-          Cada día del torneo tiene su propia hora de inicio y de cierre. "Autocompletar horarios" agenda los partidos pendientes en
-          cadena dentro de esas ventanas, repartidos entre las canchas — si un día se llena, sigue en el siguiente.
-        </p>
+        <button
+          type="button"
+          onClick={() => setHorariosOpen((o) => !o)}
+          className="flex w-full items-center justify-between gap-2 text-left"
+        >
+          <div>
+            <h2 className="mb-1 text-sm font-semibold">Horarios</h2>
+            <p className="text-xs text-zinc-500">
+              {horariosOpen
+                ? "Cada día del torneo tiene su propia hora de inicio y de cierre. \"Autocompletar horarios\" agenda los partidos pendientes en cadena dentro de esas ventanas, repartidos entre las canchas — si un día se llena, sigue en el siguiente."
+                : "Tocá para ver o editar los horarios de cada día."}
+            </p>
+          </div>
+          {horariosOpen ? <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" /> : <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400" />}
+        </button>
 
-        <div className="mb-3 flex flex-wrap items-end gap-3">
+        {horariosOpen && (
+        <>
+        <div className="mb-3 mt-3 flex flex-wrap items-end gap-3">
           <div className="w-40">
             <Label>Minutos por partido</Label>
             <Input type="number" min={15} step={5} value={matchMinutes} onChange={(e) => setMatchMinutes(e.target.value)} onBlur={saveMatchMinutes} />
@@ -579,20 +602,32 @@ export function TournamentManage() {
             ))}
           </div>
         )}
+        </>
+        )}
       </Card>
       )}
 
       {isLiga && (
       <Card>
-        <h2 className="mb-1 text-sm font-semibold">Horarios de la liga</h2>
-        <p className="mb-3 text-xs text-zinc-500">
-          Tildá los días en que se juega y elegí el horario CANCHA POR CANCHA — cada una puede tener su propia franja el mismo día. Si
-          cruza la medianoche (ej. termina a las 00:30), un partido de esa madrugada sigue perteneciendo a la jornada del día que empezó
-          la franja. "Autocompletar horarios" reparte los partidos semana a semana desde la fecha de inicio del torneo (se edita en la
-          lista de Torneos), sin que una pareja juegue dos partidos superpuestos ni más de uno por noche.
-        </p>
+        <button
+          type="button"
+          onClick={() => setHorariosOpen((o) => !o)}
+          className="flex w-full items-center justify-between gap-2 text-left"
+        >
+          <div>
+            <h2 className="mb-1 text-sm font-semibold">Horarios de la liga</h2>
+            <p className="text-xs text-zinc-500">
+              {horariosOpen
+                ? 'Tildá los días en que se juega y elegí el horario CANCHA POR CANCHA — cada una puede tener su propia franja el mismo día. Si cruza la medianoche (ej. termina a las 00:30), un partido de esa madrugada sigue perteneciendo a la jornada del día que empezó la franja. "Autocompletar horarios" reparte los partidos semana a semana desde la fecha de inicio del torneo (se edita en la lista de Torneos), sin que una pareja juegue dos partidos superpuestos ni más de uno por noche.'
+                : "Tocá para ver o editar los horarios semanales de cada cancha."}
+            </p>
+          </div>
+          {horariosOpen ? <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" /> : <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400" />}
+        </button>
 
-        <div className="mb-3 flex flex-wrap items-end gap-3">
+        {horariosOpen && (
+        <>
+        <div className="mb-3 mt-3 flex flex-wrap items-end gap-3">
           <div className="w-40">
             <Label>Minutos por partido</Label>
             <Input type="number" min={15} step={5} value={matchMinutes} onChange={(e) => setMatchMinutes(e.target.value)} onBlur={saveMatchMinutes} />
@@ -664,6 +699,8 @@ export function TournamentManage() {
               );
             })}
           </div>
+        )}
+        </>
         )}
       </Card>
       )}
