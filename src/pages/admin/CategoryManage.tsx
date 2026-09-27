@@ -113,13 +113,36 @@ export function CategoryManage() {
   }
 
   // ============ DISPONIBILIDAD HORARIA (equipos que solo pueden ciertos días/horas) ============
+  /** Después de tocar la disponibilidad de un equipo hay que volver a correr el
+   *  auto-agendado — si no, los partidos que ya estaban puestos en un día que ahora quedó
+   *  prohibido para ese equipo se quedan ahí tal cual hasta que alguien toque
+   *  "Autocompletar horarios" a mano. Se avisa si algo no consigue reacomodarse. */
+  async function rescheduleAfterAvailabilityChange() {
+    setBusy(true);
+    const [t, l] = await Promise.all([autoScheduleTournament(tournamentId!), autoScheduleLeague(tournamentId!)]);
+    setBusy(false);
+    const unscheduled = (t.unscheduled ?? 0) + (l.unscheduled ?? 0);
+    if (t.error || l.error) {
+      setError(t.error || l.error || null);
+    } else if (unscheduled > 0) {
+      setError(
+        `Ojo: no quedó lugar para reacomodar ${unscheduled} partido${unscheduled === 1 ? "" : "s"} — agregá más horarios y volvé a tocar "Autocompletar horarios".`,
+      );
+    } else {
+      setError(null);
+    }
+  }
+
   async function addAvailability(teamId: string, diasSemana: number[], horaInicio: string, horaFin: string) {
     await supabase
       .from("team_availability")
       .insert(diasSemana.map((dia) => ({ team_id: teamId, dia_semana: dia, hora_inicio: horaInicio, hora_fin: horaFin })));
+    await rescheduleAfterAvailabilityChange();
     load();
   }
 
+  // Sacar una franja solo AMPLÍA lo que el equipo puede jugar — nunca invalida un partido ya
+  // agendado, así que no hace falta reacomodar nada solo por sacarla.
   async function removeAvailability(availabilityId: string) {
     await supabase.from("team_availability").delete().eq("id", availabilityId);
     load();
