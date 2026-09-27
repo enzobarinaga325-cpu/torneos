@@ -502,7 +502,7 @@ export function TournamentManage() {
             <Badge color={statusLabels[tournament.status].color}>{statusLabels[tournament.status].label}</Badge>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {tournament.status === "armando" && (
             <Button variant="secondary" onClick={() => setTournamentStatus("en_curso")}>
               Marcar en curso
@@ -761,7 +761,7 @@ export function TournamentManage() {
               <h2 className="text-sm font-semibold">Grilla del día</h2>
               <p className="text-xs text-zinc-500">Cargá resultados con el lápiz de cada partido. También se puede descargar como imagen para subir a una historia de Instagram.</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Select value={selectedGridDay} onChange={(e) => setSelectedGridDay(e.target.value)} className="w-auto">
                 {availableGridDays.map((d) => (
                   <option key={d} value={d}>{d}{d === todayStr() ? " (hoy)" : ""}</option>

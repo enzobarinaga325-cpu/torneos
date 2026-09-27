@@ -463,8 +463,8 @@ export function CategoryManage() {
           <Card>
             <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
               <h2 className="text-sm font-semibold">Equipos ({teams.length})</h2>
-              <div className="flex items-end gap-2">
-                <div className="w-40">
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="w-32">
                   <Label>Equipos por zona</Label>
                   <Input type="number" min={2} value={teamsPerZone} onChange={(e) => setTeamsPerZone(e.target.value)} />
                 </div>
