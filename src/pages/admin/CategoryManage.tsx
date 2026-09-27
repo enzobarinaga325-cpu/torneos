@@ -3,11 +3,12 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Clock, Pencil, Plus, Shuffle, Trash2, Trophy, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, LeagueSlot, Match, Team, TeamAvailability, Tournament, TournamentDay, Zone } from "@/lib/types";
-import { buildBracket, computeStandings, matchWinner, proposeZones, roundRobinPairs } from "@/lib/tournament-logic";
+import { buildBracket, computeStandings, isTeamAvailable, matchWinner, proposeZones, roundRobinPairs } from "@/lib/tournament-logic";
 import { DIAS_SEMANA, roundRobinJourneys } from "@/lib/league-logic";
 import { toLocalDatetimeInput, localDateStr } from "@/lib/format";
 import { autoScheduleTournament } from "@/lib/autoschedule";
 import { autoScheduleLeague } from "@/lib/league-autoschedule";
+import { repairMatches } from "@/lib/repair-schedule";
 import { validateLeagueSlotTime, validateTournamentDaySlotTime } from "@/lib/slot-validation";
 import { FixtureBracket } from "@/components/FixtureBracket";
 import { ZonesView } from "@/components/ZonesView";
@@ -113,20 +114,26 @@ export function CategoryManage() {
   }
 
   // ============ DISPONIBILIDAD HORARIA (equipos que solo pueden ciertos días/horas) ============
-  /** Después de tocar la disponibilidad de un equipo hay que volver a correr el
-   *  auto-agendado — si no, los partidos que ya estaban puestos en un día que ahora quedó
-   *  prohibido para ese equipo se quedan ahí tal cual hasta que alguien toque
-   *  "Autocompletar horarios" a mano. Se avisa si algo no consigue reacomodarse. */
-  async function rescheduleAfterAvailabilityChange() {
+  /** Después de agregar una franja hay que revisar los partidos QUE YA TIENE agendados ese
+   *  equipo: los que quedaron en un horario que ahora está prohibido se reacomodan solos en
+   *  el próximo turno libre válido — sin tocar ningún otro partido del fixture. Se avisa si
+   *  alguno no consigue reacomodarse. */
+  async function repairTeamAvailability(teamId: string) {
     setBusy(true);
-    const [t, l] = await Promise.all([autoScheduleTournament(tournamentId!), autoScheduleLeague(tournamentId!)]);
+    const [{ data: windows }, { data: matches }, { data: tournamentRow }] = await Promise.all([
+      supabase.from("team_availability").select("team_id, dia_semana, hora_inicio, hora_fin").eq("team_id", teamId),
+      supabase.from("matches").select("id, scheduled_at").or(`team1_id.eq.${teamId},team2_id.eq.${teamId}`).is("winner_id", null).not("scheduled_at", "is", null),
+      supabase.from("tournaments").select("default_match_minutes").eq("id", tournamentId!).maybeSingle(),
+    ]);
+    const duration = Math.max(15, tournamentRow?.default_match_minutes ?? 60);
+    const invalidIds = (matches ?? [])
+      .filter((m) => !isTeamAvailable(windows ?? [], teamId, m.scheduled_at as string, duration))
+      .map((m) => m.id);
+    const { unscheduled } = await repairMatches(tournamentId!, invalidIds);
     setBusy(false);
-    const unscheduled = (t.unscheduled ?? 0) + (l.unscheduled ?? 0);
-    if (t.error || l.error) {
-      setError(t.error || l.error || null);
-    } else if (unscheduled > 0) {
+    if (unscheduled > 0) {
       setError(
-        `Ojo: no quedó lugar para reacomodar ${unscheduled} partido${unscheduled === 1 ? "" : "s"} — agregá más horarios y volvé a tocar "Autocompletar horarios".`,
+        `Ojo: no quedó lugar para reacomodar ${unscheduled} partido${unscheduled === 1 ? "" : "s"} de este equipo — agregá más horarios y volvé a tocar "Autocompletar horarios".`,
       );
     } else {
       setError(null);
@@ -137,7 +144,7 @@ export function CategoryManage() {
     await supabase
       .from("team_availability")
       .insert(diasSemana.map((dia) => ({ team_id: teamId, dia_semana: dia, hora_inicio: horaInicio, hora_fin: horaFin })));
-    await rescheduleAfterAvailabilityChange();
+    await repairTeamAvailability(teamId);
     load();
   }
 

@@ -449,15 +449,15 @@ export function TournamentManage() {
     load();
   }
 
-  /** Si después de cancelar y reacomodar quedó algún partido sin poder ubicarse en ningún
-   *  lado (se quedó sin capacidad), avisa en vez de dejarlo colgado en silencio. */
-  function reportCancelResult(result: { unscheduled: number; error?: string }) {
-    if (result.error) {
-      setError(result.error);
-    } else if (result.unscheduled > 0) {
+  /** Si después de cancelar quedó algún partido sin poder reacomodarse en ningún otro turno
+   *  válido (se quedó sin capacidad), avisa en vez de dejarlo colgado en silencio. */
+  function reportCancelResult(result: { unscheduled: number }) {
+    if (result.unscheduled > 0) {
       setError(
-        `Ojo: no quedó lugar para reacomodar ${result.unscheduled} partido${result.unscheduled === 1 ? "" : "s"} — agregá más días u horarios y volvé a tocar "Autocompletar horarios".`,
+        `Ojo: no quedó lugar para reacomodar ${result.unscheduled} partido${result.unscheduled === 1 ? "" : "s"} — agregá más días u horarios.`,
       );
+    } else {
+      setError(null);
     }
   }
 

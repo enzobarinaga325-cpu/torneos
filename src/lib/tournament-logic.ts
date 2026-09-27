@@ -303,6 +303,21 @@ export function isTeamAvailable(
  * descanso. Si no entran todos en los días cargados, los que sobran quedan sin agendar
  * (se informa cuántos en `unscheduledCount`).
  */
+/** Todos los horarios posibles (uno cada `durationMinutes`) dentro de las ventanas de cada
+ *  día cargado, en orden cronológico — sin cruzar canchas todavía (eso lo hace quien la usa). */
+export function buildDayTimeSlots(days: DayWindow[], durationMinutes: number): string[] {
+  const timeSlots: string[] = [];
+  for (const day of days) {
+    let t = toDateTime(day.date, day.start_time);
+    const end = toDateTime(day.date, day.end_time);
+    while (t < end) {
+      timeSlots.push(t.toISOString());
+      t = new Date(t.getTime() + durationMinutes * 60000);
+    }
+  }
+  return timeSlots;
+}
+
 export function buildSchedule(
   categoryQueues: SchedulableMatch[][],
   courtIds: string[],
@@ -318,15 +333,7 @@ export function buildSchedule(
     return { assignments: [], unscheduledCount: remainingCount };
   }
 
-  const timeSlots: string[] = [];
-  for (const day of days) {
-    let t = toDateTime(day.date, day.start_time);
-    const end = toDateTime(day.date, day.end_time);
-    while (t < end) {
-      timeSlots.push(t.toISOString());
-      t = new Date(t.getTime() + durationMinutes * 60000);
-    }
-  }
+  const timeSlots = buildDayTimeSlots(days, durationMinutes);
 
   const occupiedCourtSlots = new Set(
     alreadyScheduled.map((m) => slotKey(m.court_id, m.scheduled_at)),

@@ -1,7 +1,7 @@
 import type { LeagueSlot, ScheduleBlackout, TeamAvailability } from "./types";
 import { isBlackedOut, isTeamAvailable, slotKey, type ExistingSchedule, type ScheduleAssignment } from "./tournament-logic";
 
-type CourtSlot = Pick<LeagueSlot, "court_id" | "dia_semana" | "hora_inicio" | "hora_fin">;
+export type CourtSlot = Pick<LeagueSlot, "court_id" | "dia_semana" | "hora_inicio" | "hora_fin">;
 
 export const DIAS_SEMANA = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 
@@ -52,7 +52,7 @@ function timeToMinutes(hhmm: string): number {
  * horario de las 00:15 de una franja "lunes 19 a 00hs" es, en los hechos, del lunes a la
  * noche).
  */
-function projectLeagueSlots(
+export function projectLeagueSlots(
   slots: CourtSlot[],
   startDate: string,
   weeksAhead: number,
