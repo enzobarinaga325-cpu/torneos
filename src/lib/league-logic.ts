@@ -44,6 +44,13 @@ function timeToMinutes(hhmm: string): number {
   return h * 60 + (m || 0);
 }
 
+/** Clave "Y-M-D" en hora LOCAL de quien agenda — para la regla de "un partido por día por
+ *  pareja" no importa a qué hora exacta caiga, solo el día calendario. */
+export function localDayKey(iso: string | Date): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
 /**
  * Convierte las franjas semanales fijas de cada cancha en ocurrencias concretas (cancha +
  * fecha y hora), proyectando `weeksAhead` semanas a partir de `startDate`. Si una franja
@@ -125,6 +132,14 @@ export function buildLeagueSchedule(
   const occurrences = weeksAhead > 0 ? projectLeagueSlots(slots, startDate, weeksAhead, durationMinutes) : [];
 
   const occupiedCourtSlots = new Set(alreadyScheduled.map((m) => slotKey(m.court_id, m.scheduled_at)));
+  // Qué días ya tiene ocupados cada equipo (por lo ya agendado a mano/jugado) — una pareja no
+  // juega dos partidos el mismo día calendario a menos que el admin la haya movido a mano.
+  const busyDay = new Map<string, Set<string>>();
+  for (const m of alreadyScheduled) {
+    const day = localDayKey(m.scheduled_at);
+    if (m.team1_id) (busyDay.get(m.team1_id) ?? busyDay.set(m.team1_id, new Set()).get(m.team1_id)!).add(day);
+    if (m.team2_id) (busyDay.get(m.team2_id) ?? busyDay.set(m.team2_id, new Set()).get(m.team2_id)!).add(day);
+  }
   const assignments: ScheduleAssignment[] = [];
   let rot = 0; // próxima categoría a probar primero
 
@@ -143,6 +158,7 @@ export function buildLeagueSchedule(
       if (isBlackedOut(blackouts, courtId, iso)) continue;
       if (queues.length === 0) continue;
 
+      const day = localDayKey(date);
       for (let tries = 0; tries < queues.length; tries++) {
         const qIdx = (rot + tries) % queues.length;
         const queue = queues[qIdx];
@@ -150,6 +166,8 @@ export function buildLeagueSchedule(
           (m) =>
             !busyThisSlot.has(m.team1_id) &&
             !busyThisSlot.has(m.team2_id) &&
+            !busyDay.get(m.team1_id)?.has(day) &&
+            !busyDay.get(m.team2_id)?.has(day) &&
             isTeamAvailable(availability, m.team1_id, iso, durationMinutes) &&
             isTeamAvailable(availability, m.team2_id, iso, durationMinutes),
         );
@@ -158,6 +176,8 @@ export function buildLeagueSchedule(
         assignments.push({ matchId: match.id, courtId, scheduledAt: iso });
         busyThisSlot.add(match.team1_id);
         busyThisSlot.add(match.team2_id);
+        (busyDay.get(match.team1_id) ?? busyDay.set(match.team1_id, new Set()).get(match.team1_id)!).add(day);
+        (busyDay.get(match.team2_id) ?? busyDay.set(match.team2_id, new Set()).get(match.team2_id)!).add(day);
         remainingCount--;
         rot = (qIdx + 1) % queues.length;
         break;

@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import { buildDayTimeSlots, isBlackedOut, isTeamAvailable, slotKey } from "./tournament-logic";
-import { projectLeagueSlots } from "./league-logic";
+import { localDayKey, projectLeagueSlots } from "./league-logic";
 
 export interface RepairResult {
   repaired: number;
@@ -63,6 +63,15 @@ export async function repairMatches(tournamentId: string, matchIds: string[]): P
     if (m.team2_id) set.add(m.team2_id);
     busyAt.set(iso, set);
   }
+  // Para partidos de liga: qué días ya tiene ocupados cada equipo — no juega dos veces el
+  // mismo día calendario a menos que el admin lo haya movido a mano.
+  const busyDay = new Map<string, Set<string>>();
+  for (const m of others) {
+    if (m.stage !== "liga") continue;
+    const day = localDayKey(m.scheduled_at as string);
+    if (m.team1_id) (busyDay.get(m.team1_id) ?? busyDay.set(m.team1_id, new Set()).get(m.team1_id)!).add(day);
+    if (m.team2_id) (busyDay.get(m.team2_id) ?? busyDay.set(m.team2_id, new Set()).get(m.team2_id)!).add(day);
+  }
   // Para partidos de torneo (zona/fixture): último horario jugado por equipo, para respetar
   // el descanso mínimo entre partidos.
   const lastPlayed = new Map<string, number>();
@@ -101,6 +110,12 @@ export async function repairMatches(tournamentId: string, matchIds: string[]): P
       const busy = busyAt.get(iso);
       if (busy && ((match.team1_id && busy.has(match.team1_id)) || (match.team2_id && busy.has(match.team2_id)))) continue;
 
+      if (match.stage === "liga") {
+        const day = localDayKey(iso);
+        if (match.team1_id && busyDay.get(match.team1_id)?.has(day)) continue;
+        if (match.team2_id && busyDay.get(match.team2_id)?.has(day)) continue;
+      }
+
       if (availability && availability.length > 0) {
         if (match.team1_id && !isTeamAvailable(availability, match.team1_id, iso, duration)) continue;
         if (match.team2_id && !isTeamAvailable(availability, match.team2_id, iso, duration)) continue;
@@ -119,6 +134,11 @@ export async function repairMatches(tournamentId: string, matchIds: string[]): P
       if (match.team1_id) busySet.add(match.team1_id);
       if (match.team2_id) busySet.add(match.team2_id);
       busyAt.set(iso, busySet);
+      if (match.stage === "liga") {
+        const day = localDayKey(iso);
+        if (match.team1_id) (busyDay.get(match.team1_id) ?? busyDay.set(match.team1_id, new Set()).get(match.team1_id)!).add(day);
+        if (match.team2_id) (busyDay.get(match.team2_id) ?? busyDay.set(match.team2_id, new Set()).get(match.team2_id)!).add(day);
+      }
       const ts = new Date(iso).getTime();
       if (match.team1_id) lastPlayed.set(match.team1_id, Math.max(lastPlayed.get(match.team1_id) ?? -Infinity, ts));
       if (match.team2_id) lastPlayed.set(match.team2_id, Math.max(lastPlayed.get(match.team2_id) ?? -Infinity, ts));
