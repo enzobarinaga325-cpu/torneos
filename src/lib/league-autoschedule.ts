@@ -12,11 +12,12 @@ import type { AutoScheduleResult } from "./autoschedule";
  * horaria semanal cargada ("horarios_liga") y una fecha de inicio en el torneo.
  */
 export async function autoScheduleLeague(tournamentId: string): Promise<AutoScheduleResult> {
-  const [{ data: tournament }, { data: courts }, { data: slots }, { data: categories }] = await Promise.all([
+  const [{ data: tournament }, { data: courts }, { data: slots }, { data: categories }, { data: blackouts }] = await Promise.all([
     supabase.from("tournaments").select("default_match_minutes, start_date").eq("id", tournamentId).maybeSingle(),
     supabase.from("courts").select("id").eq("tournament_id", tournamentId).order("name"),
     supabase.from("horarios_liga").select("court_id, dia_semana, hora_inicio, hora_fin").eq("tournament_id", tournamentId),
     supabase.from("categories").select("id").eq("tournament_id", tournamentId).order("created_at"),
+    supabase.from("schedule_blackouts").select("date, court_id, hora_inicio").eq("tournament_id", tournamentId),
   ]);
 
   if (!courts || courts.length === 0) return { scheduled: 0, unscheduled: 0, error: "Cargá al menos una cancha primero." };
@@ -89,6 +90,7 @@ export async function autoScheduleLeague(tournamentId: string): Promise<AutoSche
     Math.max(15, tournament.default_match_minutes ?? 60),
     tournament.start_date,
     (locked ?? []).filter((m): m is typeof m & { court_id: string; scheduled_at: string } => !!m.court_id && !!m.scheduled_at),
+    blackouts ?? [],
   );
 
   for (const a of assignments) {

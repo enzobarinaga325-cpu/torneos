@@ -1,5 +1,5 @@
-import type { LeagueSlot } from "./types";
-import { slotKey, type ExistingSchedule, type ScheduleAssignment } from "./tournament-logic";
+import type { LeagueSlot, ScheduleBlackout } from "./types";
+import { isBlackedOut, slotKey, type ExistingSchedule, type ScheduleAssignment } from "./tournament-logic";
 
 type CourtSlot = Pick<LeagueSlot, "court_id" | "dia_semana" | "hora_inicio" | "hora_fin">;
 
@@ -105,6 +105,7 @@ export function buildLeagueSchedule(
   durationMinutes: number,
   startDate: string,
   alreadyScheduled: ExistingSchedule[] = [],
+  blackouts: Pick<ScheduleBlackout, "date" | "court_id" | "hora_inicio">[] = [],
 ): { assignments: ScheduleAssignment[]; unscheduledCount: number } {
   const queues = categoryQueues.map((q) => [...q]).filter((q) => q.length > 0);
   let remainingCount = queues.reduce((n, q) => n + q.length, 0);
@@ -138,6 +139,7 @@ export function buildLeagueSchedule(
       i++;
       const iso = date.toISOString();
       if (occupiedCourtSlots.has(slotKey(courtId, iso))) continue;
+      if (isBlackedOut(blackouts, courtId, iso)) continue;
       if (queues.length === 0) continue;
 
       for (let tries = 0; tries < queues.length; tries++) {

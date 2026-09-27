@@ -15,11 +15,12 @@ export type AutoScheduleResult = { scheduled: number; unscheduled: number; error
  * fixture, o cargar un resultado que hace avanzar a la próxima ronda).
  */
 export async function autoScheduleTournament(tournamentId: string): Promise<AutoScheduleResult> {
-  const [{ data: tournament }, { data: courts }, { data: days }, { data: categories }] = await Promise.all([
+  const [{ data: tournament }, { data: courts }, { data: days }, { data: categories }, { data: blackouts }] = await Promise.all([
     supabase.from("tournaments").select("default_match_minutes").eq("id", tournamentId).maybeSingle(),
     supabase.from("courts").select("id").eq("tournament_id", tournamentId).order("name"),
     supabase.from("tournament_days").select("date, start_time, end_time").eq("tournament_id", tournamentId).order("date"),
     supabase.from("categories").select("id").eq("tournament_id", tournamentId).order("created_at"),
+    supabase.from("schedule_blackouts").select("date, court_id, hora_inicio").eq("tournament_id", tournamentId),
   ]);
 
   if (!courts || courts.length === 0) return { scheduled: 0, unscheduled: 0, error: "Cargá al menos una cancha primero." };
@@ -80,6 +81,7 @@ export async function autoScheduleTournament(tournamentId: string): Promise<Auto
     [...days].sort((a, b) => a.date.localeCompare(b.date)),
     Math.max(15, tournament?.default_match_minutes ?? 60),
     (locked ?? []).filter((m): m is typeof m & { court_id: string; scheduled_at: string } => !!m.court_id && !!m.scheduled_at),
+    blackouts ?? [],
   );
 
   for (const a of assignments) {

@@ -40,6 +40,17 @@ export type Court = {
   created_at: string;
 };
 
+/** Cancelación de un día (o de un turno puntual) por lluvia u otro motivo — el auto-agendado
+ *  evita ese hueco de ahí en más, en vez de dejarlo vacío o reusarlo mal. */
+export type ScheduleBlackout = {
+  id: string;
+  tournament_id: string;
+  date: string; // "YYYY-MM-DD"
+  court_id: string | null; // null = todas las canchas ese día
+  hora_inicio: string | null; // "HH:MM:SS"; null = todo el día
+  created_at: string;
+};
+
 export type TournamentDay = {
   id: string;
   tournament_id: string;

@@ -28,7 +28,7 @@ function scoreLine(m: Match): string {
 }
 
 function MatchRow({
-  match, category, team1, team2, courts, editable, onSaveResult, onCourtChange, onScheduleChange,
+  match, category, team1, team2, courts, editable, onSaveResult, onCourtChange, onScheduleChange, onCancelTurn,
 }: {
   match: Match;
   category?: string;
@@ -39,6 +39,7 @@ function MatchRow({
   onSaveResult?: (m: Match, sets: SetsDraft) => void;
   onCourtChange?: (m: Match, courtId: string) => void;
   onScheduleChange?: (m: Match, iso: string) => void;
+  onCancelTurn?: (m: Match) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [sets, setSets] = useState<SetsDraft>({
@@ -126,6 +127,11 @@ function MatchRow({
             <Button variant="secondary" className="px-2 py-1 text-xs" onClick={save}>
               Guardar
             </Button>
+            {onCancelTurn && (
+              <Button variant="danger" className="px-2 py-1 text-xs" onClick={() => onCancelTurn(match)}>
+                Cancelar turno
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -152,6 +158,7 @@ export function DailyFixtureStory({
   onSaveResult,
   onCourtChange,
   onScheduleChange,
+  onCancelTurn,
   showDownload = true,
 }: {
   tournamentName: string;
@@ -166,6 +173,7 @@ export function DailyFixtureStory({
   onSaveResult?: (m: Match, sets: SetsDraft) => void;
   onCourtChange?: (m: Match, courtId: string) => void;
   onScheduleChange?: (m: Match, iso: string) => void;
+  onCancelTurn?: (m: Match) => void;
   showDownload?: boolean;
 }) {
   const { ref, download, downloading } = useDownloadImage(fileName);
@@ -200,7 +208,7 @@ export function DailyFixtureStory({
               <img src={logoUrl} crossOrigin="anonymous" alt={tournamentName} className="h-14 w-auto max-w-[60%] object-contain" />
             )}
             <p className={`text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-400 ${logoUrl ? "mt-2" : ""}`}>
-              Partidos de hoy
+              Partidos
             </p>
             {!logoUrl && <h1 className="mt-1 text-xl font-bold leading-tight text-white">{tournamentName}</h1>}
             <p className="mt-1 text-[11px] font-medium tracking-wide text-emerald-100/70">{dayLabel(date)}</p>
@@ -229,6 +237,7 @@ export function DailyFixtureStory({
                           onSaveResult={onSaveResult}
                           onCourtChange={onCourtChange}
                           onScheduleChange={onScheduleChange}
+                          onCancelTurn={onCancelTurn}
                         />
                       ))}
                     </div>

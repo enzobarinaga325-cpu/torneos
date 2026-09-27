@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, Image as ImageIcon, Printer, RefreshCw, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, CloudRain, Image as ImageIcon, Printer, RefreshCw, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { Category, Court, LeagueSlot, Match, Modalidad, Team, Tournament, TournamentDay } from "@/lib/types";
+import type { Category, Court, LeagueSlot, Match, Modalidad, ScheduleBlackout, Team, Tournament, TournamentDay } from "@/lib/types";
 import { matchWinner } from "@/lib/tournament-logic";
 import { autoScheduleTournament } from "@/lib/autoschedule";
 import { autoScheduleLeague } from "@/lib/league-autoschedule";
+import { cancelDay, cancelTurn, removeBlackout } from "@/lib/blackouts";
 import { uploadSiteImage } from "@/lib/images";
 import { DIAS_SEMANA } from "@/lib/league-logic";
 import { validateLeagueSlotTime, validateTournamentDaySlotTime } from "@/lib/slot-validation";
@@ -46,6 +47,7 @@ export function TournamentManage() {
   const [allTeams, setAllTeams] = useState<Team[]>([]);
   const [allMatches, setAllMatches] = useState<Match[]>([]);
   const [leagueSlots, setLeagueSlots] = useState<LeagueSlot[]>([]);
+  const [blackouts, setBlackouts] = useState<ScheduleBlackout[]>([]);
   const [selectedGridDay, setSelectedGridDay] = useState("");
   const [courtName, setCourtName] = useState("");
   const [categoryName, setCategoryName] = useState("");
@@ -57,18 +59,20 @@ export function TournamentManage() {
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    const [{ data: t }, { data: c }, { data: cats }, { data: d }, { data: ls }] = await Promise.all([
+    const [{ data: t }, { data: c }, { data: cats }, { data: d }, { data: ls }, { data: bo }] = await Promise.all([
       supabase.from("tournaments").select("*").eq("id", id!).maybeSingle(),
       supabase.from("courts").select("*").eq("tournament_id", id!).order("name"),
       supabase.from("categories").select("*").eq("tournament_id", id!).order("created_at"),
       supabase.from("tournament_days").select("*").eq("tournament_id", id!).order("date"),
       supabase.from("horarios_liga").select("*").eq("tournament_id", id!),
+      supabase.from("schedule_blackouts").select("*").eq("tournament_id", id!).order("date"),
     ]);
     setTournament(t ?? null);
     setCourts(c ?? []);
     setCategories(cats ?? []);
     setDays(d ?? []);
     setLeagueSlots(ls ?? []);
+    setBlackouts(bo ?? []);
     if (t) setMatchMinutes(String(t.default_match_minutes ?? 60));
 
     if (cats && cats.length > 0) {
@@ -417,6 +421,37 @@ export function TournamentManage() {
     await updateMatchSlot(match, { scheduled_at: isoDatetime || null });
   }
 
+  /** Cancela TODO el día elegido en la grilla (todas las canchas) — por lluvia, por ejemplo.
+   *  Los partidos que tenía agendados no se pierden: vuelven al pool y "Autocompletar
+   *  horarios" los reacomoda solo en el próximo turno libre. */
+  async function handleCancelDay() {
+    if (!selectedGridDay) return;
+    if (
+      !confirm(
+        `¿Cancelar TODO el día ${selectedGridDay} (todas las canchas)? Los partidos que tenía agendados no se pierden: se van a reacomodar solos en los próximos turnos libres.`,
+      )
+    )
+      return;
+    setScheduling(true);
+    setError(null);
+    await cancelDay(id!, selectedGridDay);
+    setScheduling(false);
+    load();
+  }
+
+  /** Cancela un partido puntual (esa cancha, ese horario exacto) — el resto del día sigue. */
+  async function handleCancelTurn(match: Match) {
+    if (!confirm("¿Cancelar este turno? El partido no se pierde: se va a reacomodar solo en el próximo turno libre.")) return;
+    setError(null);
+    await cancelTurn(id!, match);
+    load();
+  }
+
+  async function handleRemoveBlackout(blackoutId: string) {
+    await removeBlackout(blackoutId);
+    load();
+  }
+
   const allTeamsById = useMemo(() => Object.fromEntries(allTeams.map((t) => [t.id, t])), [allTeams]);
   const categoriesById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories]);
   const teamsByCategory = useMemo(() => {
@@ -712,12 +747,33 @@ export function TournamentManage() {
               <h2 className="text-sm font-semibold">Grilla del día</h2>
               <p className="text-xs text-zinc-500">Cargá resultados con el lápiz de cada partido. También se puede descargar como imagen para subir a una historia de Instagram.</p>
             </div>
-            <Select value={selectedGridDay} onChange={(e) => setSelectedGridDay(e.target.value)} className="w-auto">
-              {availableGridDays.map((d) => (
-                <option key={d} value={d}>{d}{d === todayStr() ? " (hoy)" : ""}</option>
-              ))}
-            </Select>
+            <div className="flex items-center gap-2">
+              <Select value={selectedGridDay} onChange={(e) => setSelectedGridDay(e.target.value)} className="w-auto">
+                {availableGridDays.map((d) => (
+                  <option key={d} value={d}>{d}{d === todayStr() ? " (hoy)" : ""}</option>
+                ))}
+              </Select>
+              <Button variant="danger" onClick={handleCancelDay} disabled={scheduling || !selectedGridDay}>
+                <CloudRain className="h-3.5 w-3.5" /> Cancelar este día
+              </Button>
+            </div>
           </div>
+
+          {blackouts.length > 0 && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {blackouts.map((b) => (
+                <span key={b.id} className="flex items-center gap-1.5 rounded-full bg-red-50 py-1 pl-3 pr-1.5 text-xs font-medium text-red-700">
+                  {b.date}
+                  {b.court_id ? ` · ${courts.find((c) => c.id === b.court_id)?.name ?? "cancha borrada"}` : " · todas las canchas"}
+                  {b.hora_inicio ? ` · ${b.hora_inicio.slice(0, 5)}hs` : " · todo el día"}
+                  <button onClick={() => handleRemoveBlackout(b.id)} className="rounded-full p-0.5 hover:bg-red-100" aria-label="Quitar cancelación">
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
           <DailyFixtureStory
             tournamentName={tournament.name}
             logoUrl={tournament.logo_url}
@@ -731,6 +787,7 @@ export function TournamentManage() {
             onSaveResult={saveResult}
             onCourtChange={updateMatchCourt}
             onScheduleChange={updateMatchSchedule}
+            onCancelTurn={handleCancelTurn}
           />
         </Card>
       )}

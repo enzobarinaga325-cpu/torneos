@@ -1,4 +1,5 @@
-import type { Match, ZoneStanding } from "./types";
+import type { Match, ScheduleBlackout, ZoneStanding } from "./types";
+import { localDateStr } from "./format";
 
 /** Mezcla un array sin mutar el original (Fisher-Yates). */
 function shuffle<T>(arr: T[]): T[] {
@@ -242,6 +243,19 @@ export function slotKey(courtId: string, scheduledAt: string): string {
   return `${courtId}|${scheduledAt}`;
 }
 
+/** true si ese turno puntual (cancha + horario exacto) está cancelado — por lluvia u otro
+ *  motivo — sea porque se canceló todo ese día (en todas las canchas o en una puntual), o
+ *  porque se canceló justo ese turno. */
+export function isBlackedOut(blackouts: Pick<ScheduleBlackout, "date" | "court_id" | "hora_inicio">[], courtId: string, iso: string): boolean {
+  if (blackouts.length === 0) return false;
+  const date = localDateStr(iso);
+  const dt = new Date(iso);
+  const hhmm = `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+  return blackouts.some(
+    (b) => b.date === date && (b.court_id === null || b.court_id === courtId) && (b.hora_inicio === null || b.hora_inicio.slice(0, 5) === hhmm),
+  );
+}
+
 /**
  * Reparte partidos entre las canchas disponibles, día por día, respetando dos reglas
  * duras: un mismo equipo nunca queda en dos partidos al mismo horario, y entre dos
@@ -264,6 +278,7 @@ export function buildSchedule(
   days: DayWindow[],
   durationMinutes: number,
   alreadyScheduled: ExistingSchedule[] = [],
+  blackouts: Pick<ScheduleBlackout, "date" | "court_id" | "hora_inicio">[] = [],
 ): { assignments: ScheduleAssignment[]; unscheduledCount: number } {
   const queues = categoryQueues.map((q) => [...q]).filter((q) => q.length > 0);
   let remainingCount = queues.reduce((n, q) => n + q.length, 0);
@@ -302,6 +317,7 @@ export function buildSchedule(
     const busyThisSlot = new Set<string>();
     for (const courtId of courtIds) {
       if (occupiedCourtSlots.has(slotKey(courtId, iso))) continue;
+      if (isBlackedOut(blackouts, courtId, iso)) continue;
 
       for (let tries = 0; tries < queues.length; tries++) {
         const qIdx = (rot + tries) % queues.length;
