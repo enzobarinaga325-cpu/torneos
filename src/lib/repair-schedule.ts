@@ -209,10 +209,12 @@ export async function repairMatches(tournamentId: string, matchIds: string[]): P
 
   for (const match of toRepair) {
     const candidates = match.stage === "liga" ? leagueCandidates : tournamentCandidates;
+    // El turno viejo del partido solo sirve para ofrecérselo a quien se desplaza si TODAVÍA
+    // es un turno válido según la configuración actual — si la franja horaria se achicó
+    // después de que este partido se agendó ahí, ya no cuenta como destino de intercambio.
+    const candidateSet = new Set(candidates.map((c) => slotKey(c.courtId, c.iso)));
     const originalCourtId = match.court_id;
     const originalIso = match.scheduled_at;
-    const ownOldTs = originalIso ? new Date(originalIso).getTime() : null;
-    const ownOldDay = originalIso ? localDayKey(originalIso) : null;
 
     let freeTarget: { courtId: string; iso: string } | null = null;
     let swapTarget: { courtId: string; iso: string; occupant: RepairMatch } | null = null;
@@ -223,8 +225,12 @@ export async function repairMatches(tournamentId: string, matchIds: string[]): P
 
       const occupant = bySlot.get(slotKey(courtId, iso));
 
+      // `match` nunca está en `committed` (se excluyó por ser el que se repara), así que su
+      // propio turno viejo JAMÁS contribuyó a `busyAt`/`busyDay`/`teamTimestamps` — no hay
+      // nada propio que excluir acá; solo importa si otro partido de verdad ya ocupa ese día
+      // u horario.
       if (!occupant) {
-        if (!teamFits(match.team1_id, match.stage, iso, ownOldTs, ownOldDay) || !teamFits(match.team2_id, match.stage, iso, ownOldTs, ownOldDay)) continue;
+        if (!teamFits(match.team1_id, match.stage, iso, null) || !teamFits(match.team2_id, match.stage, iso, null)) continue;
         if (!freeTarget) freeTarget = { courtId, iso };
         continue; // sigue buscando un intercambio antes de conformarse con un hueco libre
       }
@@ -233,8 +239,9 @@ export async function repairMatches(tournamentId: string, matchIds: string[]): P
       if (occupant.auto_scheduled === false) continue; // el admin lo movió a mano, no se toca
       if (occupant.winner_id != null) continue; // ya se jugó
       if (!originalCourtId || !originalIso) continue; // no tiene un lugar viejo para ofrecerle
+      if (!candidateSet.has(slotKey(originalCourtId, originalIso))) continue; // ya no es un turno válido
 
-      if (!teamFits(match.team1_id, match.stage, iso, ownOldTs, ownOldDay) || !teamFits(match.team2_id, match.stage, iso, ownOldTs, ownOldDay)) continue;
+      if (!teamFits(match.team1_id, match.stage, iso, null) || !teamFits(match.team2_id, match.stage, iso, null)) continue;
 
       // ¿El que ocupa este lugar puede pasar al que nuestro partido está por dejar libre?
       if (isBlackedOut(blackouts ?? [], originalCourtId, originalIso)) continue;
