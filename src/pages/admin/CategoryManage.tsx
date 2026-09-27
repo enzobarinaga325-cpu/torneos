@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Pencil, Plus, Shuffle, Trash2, Trophy } from "lucide-react";
+import { ArrowLeft, Clock, Pencil, Plus, Shuffle, Trash2, Trophy, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { Category, Court, LeagueSlot, Match, Team, Tournament, TournamentDay, Zone } from "@/lib/types";
+import type { Category, Court, LeagueSlot, Match, Team, TeamAvailability, Tournament, TournamentDay, Zone } from "@/lib/types";
 import { buildBracket, computeStandings, matchWinner, proposeZones, roundRobinPairs } from "@/lib/tournament-logic";
-import { roundRobinJourneys } from "@/lib/league-logic";
+import { DIAS_SEMANA, roundRobinJourneys } from "@/lib/league-logic";
 import { toLocalDatetimeInput, localDateStr } from "@/lib/format";
 import { autoScheduleTournament } from "@/lib/autoschedule";
 import { autoScheduleLeague } from "@/lib/league-autoschedule";
@@ -26,6 +26,8 @@ export function CategoryManage() {
   const [courts, setCourts] = useState<Court[]>([]);
   const [leagueSlots, setLeagueSlots] = useState<LeagueSlot[]>([]);
   const [days, setDays] = useState<TournamentDay[]>([]);
+  const [teamAvailability, setTeamAvailability] = useState<TeamAvailability[]>([]);
+  const [openAvailabilityTeamId, setOpenAvailabilityTeamId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("equipos");
 
   const [teamName, setTeamName] = useState("");
@@ -38,7 +40,7 @@ export function CategoryManage() {
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    const [{ data: tour }, { data: cat }, { data: t }, { data: z }, { data: m }, { data: co }, { data: ls }, { data: d }] = await Promise.all([
+    const [{ data: tour }, { data: cat }, { data: t }, { data: z }, { data: m }, { data: co }, { data: ls }, { data: d }, { data: av }] = await Promise.all([
       supabase.from("tournaments").select("*").eq("id", tournamentId!).maybeSingle(),
       supabase.from("categories").select("*").eq("id", categoryId!).maybeSingle(),
       supabase.from("teams").select("*").eq("category_id", categoryId!).order("name"),
@@ -47,6 +49,7 @@ export function CategoryManage() {
       supabase.from("courts").select("*").eq("tournament_id", tournamentId!).order("name"),
       supabase.from("horarios_liga").select("*").eq("tournament_id", tournamentId!),
       supabase.from("tournament_days").select("*").eq("tournament_id", tournamentId!),
+      supabase.from("team_availability").select("*, teams!inner(category_id)").eq("teams.category_id", categoryId!),
     ]);
     setTournament(tour ?? null);
     setCategory(cat ?? null);
@@ -56,6 +59,7 @@ export function CategoryManage() {
     setCourts(co ?? []);
     setLeagueSlots(ls ?? []);
     setDays(d ?? []);
+    setTeamAvailability(av ?? []);
     if (tour) setIdaVuelta(tour.ida_vuelta);
   }
 
@@ -105,6 +109,17 @@ export function CategoryManage() {
 
   async function assignZone(teamId: string, zoneId: string) {
     await supabase.from("teams").update({ zone_id: zoneId || null }).eq("id", teamId);
+    load();
+  }
+
+  // ============ DISPONIBILIDAD HORARIA (equipos que solo pueden ciertos días/horas) ============
+  async function addAvailability(teamId: string, diaSemana: number, horaInicio: string, horaFin: string) {
+    await supabase.from("team_availability").insert({ team_id: teamId, dia_semana: diaSemana, hora_inicio: horaInicio, hora_fin: horaFin });
+    load();
+  }
+
+  async function removeAvailability(availabilityId: string) {
+    await supabase.from("team_availability").delete().eq("id", availabilityId);
     load();
   }
 
@@ -465,8 +480,11 @@ export function CategoryManage() {
               <p className="text-xs text-zinc-500">Todavía no cargaste equipos.</p>
             ) : (
               <div className="flex flex-col gap-1.5">
-                {teams.map((team) => (
-                  <div key={team.id} className="flex items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2">
+                {teams.map((team) => {
+                  const windows = teamAvailability.filter((a) => a.team_id === team.id);
+                  return (
+                  <div key={team.id} className="flex flex-col gap-2 rounded-lg bg-zinc-50 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
                     {editingTeamId === team.id ? (
                       <form
                         className="flex flex-1 items-center gap-2"
@@ -485,7 +503,12 @@ export function CategoryManage() {
                       </form>
                     ) : (
                       <>
-                        <span className="text-sm">{team.name}</span>
+                        <span className="text-sm">
+                          {team.name}
+                          {windows.length > 0 && (
+                            <span className="ml-1.5 text-xs font-medium text-amber-700">· {windows.length} franja{windows.length === 1 ? "" : "s"}</span>
+                          )}
+                        </span>
                         <div className="flex items-center gap-2">
                           {zones.length > 0 && (
                             <select
@@ -499,6 +522,13 @@ export function CategoryManage() {
                               ))}
                             </select>
                           )}
+                          <button
+                            onClick={() => setOpenAvailabilityTeamId((cur) => (cur === team.id ? null : team.id))}
+                            className={`rounded-md p-1.5 hover:bg-zinc-100 ${windows.length > 0 ? "text-amber-600" : "text-zinc-500"}`}
+                            aria-label={`Disponibilidad horaria de ${team.name}`}
+                          >
+                            <Clock className="h-4 w-4" />
+                          </button>
                           <button onClick={() => startEditTeam(team)} className="rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100" aria-label={`Editar ${team.name}`}>
                             <Pencil className="h-4 w-4" />
                           </button>
@@ -508,8 +538,17 @@ export function CategoryManage() {
                         </div>
                       </>
                     )}
+                    </div>
+                    {openAvailabilityTeamId === team.id && (
+                      <TeamAvailabilityEditor
+                        windows={windows}
+                        onAdd={(dia, inicio, fin) => addAvailability(team.id, dia, inicio, fin)}
+                        onRemove={removeAvailability}
+                      />
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </Card>
@@ -699,6 +738,57 @@ export function CategoryManage() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Franjas horarias en las que UNA pareja puntual puede jugar (ej. "solo martes de 20 a 22").
+ * Sin ninguna franja cargada, el equipo se agenda como cualquier otro, sin restricción —
+ * esto es solo para el puñado de parejas que de verdad la necesiten.
+ */
+function TeamAvailabilityEditor({
+  windows, onAdd, onRemove,
+}: {
+  windows: TeamAvailability[];
+  onAdd: (diaSemana: number, horaInicio: string, horaFin: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  const [dia, setDia] = useState(1);
+  const [inicio, setInicio] = useState("19:00");
+  const [fin, setFin] = useState("22:00");
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-2">
+      <p className="mb-1.5 text-[11px] text-amber-800">
+        Si no cargás ninguna franja, esta pareja se agenda sin restricción. Si cargás alguna, solo se la va a agendar dentro de esas franjas.
+      </p>
+      {windows.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {windows.map((w) => (
+            <span key={w.id} className="flex items-center gap-1 rounded-full bg-white py-1 pl-2.5 pr-1 text-xs text-amber-800 ring-1 ring-amber-300">
+              {DIAS_SEMANA[w.dia_semana]} {w.hora_inicio.slice(0, 5)}-{w.hora_fin.slice(0, 5)}
+              <button onClick={() => onRemove(w.id)} className="rounded-full p-0.5 hover:bg-amber-100" aria-label="Quitar franja">
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <select value={dia} onChange={(e) => setDia(Number(e.target.value))} className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs">
+          {DIAS_SEMANA.map((name, i) => (
+            <option key={i} value={i}>{name}</option>
+          ))}
+        </select>
+        <span className="text-xs text-zinc-500">de</span>
+        <input type="time" value={inicio} onChange={(e) => setInicio(e.target.value)} className="rounded-md border border-zinc-300 px-2 py-1 text-xs" />
+        <span className="text-xs text-zinc-500">a</span>
+        <input type="time" value={fin} onChange={(e) => setFin(e.target.value)} className="rounded-md border border-zinc-300 px-2 py-1 text-xs" />
+        <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => onAdd(dia, inicio, fin)}>
+          <Plus className="h-3 w-3" /> Agregar franja
+        </Button>
+      </div>
     </div>
   );
 }

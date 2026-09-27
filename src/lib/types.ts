@@ -51,6 +51,17 @@ export type ScheduleBlackout = {
   created_at: string;
 };
 
+/** Restricción horaria de UN equipo puntual (ej. "esta pareja solo puede jugar los martes de
+ *  20 a 22hs"). Un equipo sin ninguna fila acá no tiene ninguna restricción. */
+export type TeamAvailability = {
+  id: string;
+  team_id: string;
+  dia_semana: number; // 0 = domingo .. 6 = sábado
+  hora_inicio: string; // "HH:MM:SS"
+  hora_fin: string; // "HH:MM:SS" — si es <= hora_inicio, cruza la medianoche
+  created_at: string;
+};
+
 export type TournamentDay = {
   id: string;
   tournament_id: string;

@@ -1,5 +1,10 @@
-import type { Match, ScheduleBlackout, ZoneStanding } from "./types";
+import type { Match, ScheduleBlackout, TeamAvailability, ZoneStanding } from "./types";
 import { localDateStr } from "./format";
+
+function timeToMinutes(hhmm: string): number {
+  const [h, m] = hhmm.slice(0, 5).split(":").map(Number);
+  return h * 60 + (m || 0);
+}
 
 /** Mezcla un array sin mutar el original (Fisher-Yates). */
 function shuffle<T>(arr: T[]): T[] {
@@ -256,6 +261,32 @@ export function isBlackedOut(blackouts: Pick<ScheduleBlackout, "date" | "court_i
   );
 }
 
+/** true si ESE equipo puede jugar a ese horario exacto — un equipo sin ninguna franja
+ *  cargada no tiene ninguna restricción (se agenda como cualquier otro). Para el que sí
+ *  tiene, el partido entero (según `durationMinutes`) tiene que entrar dentro de alguna de
+ *  sus franjas permitidas, contemplando que una franja puede cruzar la medianoche. */
+export function isTeamAvailable(
+  windows: Pick<TeamAvailability, "team_id" | "dia_semana" | "hora_inicio" | "hora_fin">[],
+  teamId: string,
+  iso: string,
+  durationMinutes: number,
+): boolean {
+  const teamWindows = windows.filter((w) => w.team_id === teamId);
+  if (teamWindows.length === 0) return true;
+  const dt = new Date(iso);
+  const dow = dt.getDay();
+  const prevDow = (dow + 6) % 7;
+  const minutes = dt.getHours() * 60 + dt.getMinutes();
+  return teamWindows.some((w) => {
+    const start = timeToMinutes(w.hora_inicio);
+    let end = timeToMinutes(w.hora_fin);
+    if (end <= start) end += 24 * 60;
+    if (w.dia_semana === dow && minutes >= start && minutes + durationMinutes <= end) return true;
+    if (w.dia_semana === prevDow && minutes + 24 * 60 >= start && minutes + 24 * 60 + durationMinutes <= end) return true;
+    return false;
+  });
+}
+
 /**
  * Reparte partidos entre las canchas disponibles, día por día, respetando dos reglas
  * duras: un mismo equipo nunca queda en dos partidos al mismo horario, y entre dos
@@ -279,6 +310,7 @@ export function buildSchedule(
   durationMinutes: number,
   alreadyScheduled: ExistingSchedule[] = [],
   blackouts: Pick<ScheduleBlackout, "date" | "court_id" | "hora_inicio">[] = [],
+  availability: Pick<TeamAvailability, "team_id" | "dia_semana" | "hora_inicio" | "hora_fin">[] = [],
 ): { assignments: ScheduleAssignment[]; unscheduledCount: number } {
   const queues = categoryQueues.map((q) => [...q]).filter((q) => q.length > 0);
   let remainingCount = queues.reduce((n, q) => n + q.length, 0);
@@ -327,6 +359,8 @@ export function buildSchedule(
           if (m.team2_id && busyThisSlot.has(m.team2_id)) return false;
           if (m.team1_id && ts - (lastPlayed.get(m.team1_id) ?? -Infinity) < minGapMs) return false;
           if (m.team2_id && ts - (lastPlayed.get(m.team2_id) ?? -Infinity) < minGapMs) return false;
+          if (m.team1_id && !isTeamAvailable(availability, m.team1_id, iso, durationMinutes)) return false;
+          if (m.team2_id && !isTeamAvailable(availability, m.team2_id, iso, durationMinutes)) return false;
           return true;
         });
         if (idx === -1) continue;

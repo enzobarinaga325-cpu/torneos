@@ -26,6 +26,11 @@ export async function autoScheduleLeague(tournamentId: string): Promise<AutoSche
   if (!categories || categories.length === 0) return { scheduled: 0, unscheduled: 0 };
 
   const categoryIds = categories.map((c) => c.id);
+
+  const { data: availability } = await supabase
+    .from("team_availability")
+    .select("team_id, dia_semana, hora_inicio, hora_fin, teams!inner(category_id)")
+    .in("teams.category_id", categoryIds);
   const { data: zones } = await supabase.from("zones").select("id, category_id").in("category_id", categoryIds).order("position");
 
   // Un "grupo" es una categoría entera (si no tiene zonas) o una zona puntual dentro de una
@@ -91,6 +96,7 @@ export async function autoScheduleLeague(tournamentId: string): Promise<AutoSche
     tournament.start_date,
     (locked ?? []).filter((m): m is typeof m & { court_id: string; scheduled_at: string } => !!m.court_id && !!m.scheduled_at),
     blackouts ?? [],
+    availability ?? [],
   );
 
   for (const a of assignments) {
