@@ -113,8 +113,10 @@ export function CategoryManage() {
   }
 
   // ============ DISPONIBILIDAD HORARIA (equipos que solo pueden ciertos días/horas) ============
-  async function addAvailability(teamId: string, diaSemana: number, horaInicio: string, horaFin: string) {
-    await supabase.from("team_availability").insert({ team_id: teamId, dia_semana: diaSemana, hora_inicio: horaInicio, hora_fin: horaFin });
+  async function addAvailability(teamId: string, diasSemana: number[], horaInicio: string, horaFin: string) {
+    await supabase
+      .from("team_availability")
+      .insert(diasSemana.map((dia) => ({ team_id: teamId, dia_semana: dia, hora_inicio: horaInicio, hora_fin: horaFin })));
     load();
   }
 
@@ -542,7 +544,7 @@ export function CategoryManage() {
                     {openAvailabilityTeamId === team.id && (
                       <TeamAvailabilityEditor
                         windows={windows}
-                        onAdd={(dia, inicio, fin) => addAvailability(team.id, dia, inicio, fin)}
+                        onAdd={(dias, inicio, fin) => addAvailability(team.id, dias, inicio, fin)}
                         onRemove={removeAvailability}
                       />
                     )}
@@ -742,21 +744,40 @@ export function CategoryManage() {
   );
 }
 
+/** Lunes a domingo, para tildarlos en el orden natural de la semana (día 0 = domingo). */
+const AVAILABILITY_DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
 /**
- * Franjas horarias en las que UNA pareja puntual puede jugar (ej. "solo martes de 20 a 22").
- * Sin ninguna franja cargada, el equipo se agenda como cualquier otro, sin restricción —
- * esto es solo para el puñado de parejas que de verdad la necesiten.
+ * Franjas horarias en las que UNA pareja puntual puede jugar (ej. "solo martes y jueves de
+ * 20 a 22"). Sin ninguna franja cargada, el equipo se agenda como cualquier otro, sin
+ * restricción — esto es solo para el puñado de parejas que de verdad la necesiten. Se puede
+ * tildar más de un día a la vez (mismo horario) para no tener que repetir el alta uno por uno.
  */
 function TeamAvailabilityEditor({
   windows, onAdd, onRemove,
 }: {
   windows: TeamAvailability[];
-  onAdd: (diaSemana: number, horaInicio: string, horaFin: string) => void;
+  onAdd: (diasSemana: number[], horaInicio: string, horaFin: string) => void;
   onRemove: (id: string) => void;
 }) {
-  const [dia, setDia] = useState(1);
+  const [selectedDays, setSelectedDays] = useState<Set<number>>(new Set());
   const [inicio, setInicio] = useState("19:00");
   const [fin, setFin] = useState("22:00");
+
+  function toggleDay(dow: number) {
+    setSelectedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(dow)) next.delete(dow);
+      else next.add(dow);
+      return next;
+    });
+  }
+
+  function handleAdd() {
+    if (selectedDays.size === 0) return;
+    onAdd([...selectedDays], inicio, fin);
+    setSelectedDays(new Set());
+  }
 
   return (
     <div className="rounded-lg border border-amber-200 bg-amber-50 p-2">
@@ -775,18 +796,27 @@ function TeamAvailabilityEditor({
           ))}
         </div>
       )}
+      <div className="mb-1.5 flex flex-wrap gap-1">
+        {AVAILABILITY_DAY_ORDER.map((dow) => (
+          <button
+            key={dow}
+            type="button"
+            onClick={() => toggleDay(dow)}
+            className={`rounded-full px-2 py-1 text-[11px] font-medium ${
+              selectedDays.has(dow) ? "bg-amber-600 text-white" : "bg-white text-amber-800 ring-1 ring-amber-300"
+            }`}
+          >
+            {DIAS_SEMANA[dow].slice(0, 3)}
+          </button>
+        ))}
+      </div>
       <div className="flex flex-wrap items-center gap-1.5">
-        <select value={dia} onChange={(e) => setDia(Number(e.target.value))} className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs">
-          {DIAS_SEMANA.map((name, i) => (
-            <option key={i} value={i}>{name}</option>
-          ))}
-        </select>
         <span className="text-xs text-zinc-500">de</span>
         <input type="time" value={inicio} onChange={(e) => setInicio(e.target.value)} className="rounded-md border border-zinc-300 px-2 py-1 text-xs" />
         <span className="text-xs text-zinc-500">a</span>
         <input type="time" value={fin} onChange={(e) => setFin(e.target.value)} className="rounded-md border border-zinc-300 px-2 py-1 text-xs" />
-        <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => onAdd(dia, inicio, fin)}>
-          <Plus className="h-3 w-3" /> Agregar franja
+        <Button variant="secondary" className="px-2 py-1 text-xs" onClick={handleAdd} disabled={selectedDays.size === 0}>
+          <Plus className="h-3 w-3" /> Agregar {selectedDays.size > 1 ? `${selectedDays.size} días` : "franja"}
         </Button>
       </div>
     </div>
