@@ -434,8 +434,9 @@ export function TournamentManage() {
       return;
     setScheduling(true);
     setError(null);
-    await cancelDay(id!, selectedGridDay);
+    const result = await cancelDay(id!, selectedGridDay);
     setScheduling(false);
+    reportCancelResult(result);
     load();
   }
 
@@ -443,8 +444,21 @@ export function TournamentManage() {
   async function handleCancelTurn(match: Match) {
     if (!confirm("¿Cancelar este turno? El partido no se pierde: se va a reacomodar solo en el próximo turno libre.")) return;
     setError(null);
-    await cancelTurn(id!, match);
+    const result = await cancelTurn(id!, match);
+    reportCancelResult(result);
     load();
+  }
+
+  /** Si después de cancelar y reacomodar quedó algún partido sin poder ubicarse en ningún
+   *  lado (se quedó sin capacidad), avisa en vez de dejarlo colgado en silencio. */
+  function reportCancelResult(result: { unscheduled: number; error?: string }) {
+    if (result.error) {
+      setError(result.error);
+    } else if (result.unscheduled > 0) {
+      setError(
+        `Ojo: no quedó lugar para reacomodar ${result.unscheduled} partido${result.unscheduled === 1 ? "" : "s"} — agregá más días u horarios y volvé a tocar "Autocompletar horarios".`,
+      );
+    }
   }
 
   async function handleRemoveBlackout(blackoutId: string) {
