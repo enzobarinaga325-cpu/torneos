@@ -62,6 +62,17 @@ export type TeamAvailability = {
   created_at: string;
 };
 
+/** Un equipo puntual no puede jugar entre dos fechas (viaje, lesión, etc.) — a diferencia de
+ *  `TeamAvailability` (una franja semanal que se repite), esto es un rango de fechas
+ *  concreto. Mientras esté cargado, ningún partido de ese equipo se agenda ahí. */
+export type TeamUnavailability = {
+  id: string;
+  team_id: string;
+  start_date: string; // "YYYY-MM-DD"
+  end_date: string; // "YYYY-MM-DD", inclusive
+  created_at: string;
+};
+
 export type TournamentDay = {
   id: string;
   tournament_id: string;

@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import { buildDayTimeSlots, isBlackedOut, isTeamAvailable, slotKey } from "./tournament-logic";
+import { buildDayTimeSlots, isBlackedOut, isTeamAvailable, isTeamAvailableOnDate, slotKey } from "./tournament-logic";
 import { localDayKey, projectLeagueSlots } from "./league-logic";
 
 export interface RepairResult {
@@ -57,6 +57,11 @@ export async function repairMatches(tournamentId: string, matchIds: string[]): P
   const { data: availability } = await supabase
     .from("team_availability")
     .select("team_id, dia_semana, hora_inicio, hora_fin, teams!inner(category_id)")
+    .in("teams.category_id", categoryIds);
+
+  const { data: unavailability } = await supabase
+    .from("team_unavailability")
+    .select("team_id, start_date, end_date, teams!inner(category_id)")
     .in("teams.category_id", categoryIds);
 
   const { data: allScheduled } = await supabase
@@ -157,7 +162,9 @@ export async function repairMatches(tournamentId: string, matchIds: string[]): P
   }
 
   function fitsAvailability(teamId: string | null, iso: string): boolean {
-    if (!teamId || !availability || availability.length === 0) return true;
+    if (!teamId) return true;
+    if (unavailability && unavailability.length > 0 && !isTeamAvailableOnDate(unavailability, teamId, iso)) return false;
+    if (!availability || availability.length === 0) return true;
     return isTeamAvailable(availability, teamId, iso, duration);
   }
 

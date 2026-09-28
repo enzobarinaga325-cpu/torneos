@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import { isBlackedOut, isTeamAvailable, slotKey } from "./tournament-logic";
+import { isBlackedOut, isTeamAvailable, isTeamAvailableOnDate, slotKey } from "./tournament-logic";
 import { localDayKey, projectLeagueSlots } from "./league-logic";
 
 export interface FillGapsResult {
@@ -47,6 +47,11 @@ export async function fillScheduleGaps(tournamentId: string): Promise<FillGapsRe
     .select("team_id, dia_semana, hora_inicio, hora_fin, teams!inner(category_id)")
     .in("teams.category_id", categoryIds);
 
+  const { data: unavailability } = await supabase
+    .from("team_unavailability")
+    .select("team_id, start_date, end_date, teams!inner(category_id)")
+    .in("teams.category_id", categoryIds);
+
   const { data: allMatches } = await supabase
     .from("matches")
     .select("id, court_id, scheduled_at, team1_id, team2_id, winner_id, auto_scheduled")
@@ -77,7 +82,9 @@ export async function fillScheduleGaps(tournamentId: string): Promise<FillGapsRe
   }
 
   function fitsAvailability(teamId: string | null, iso: string): boolean {
-    if (!teamId || !availability || availability.length === 0) return true;
+    if (!teamId) return true;
+    if (unavailability && unavailability.length > 0 && !isTeamAvailableOnDate(unavailability, teamId, iso)) return false;
+    if (!availability || availability.length === 0) return true;
     return isTeamAvailable(availability, teamId, iso, duration);
   }
 

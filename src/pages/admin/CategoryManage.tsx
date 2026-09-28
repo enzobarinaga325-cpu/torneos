@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Clock, Pencil, Plus, Shuffle, Trash2, Trophy, X } from "lucide-react";
+import { ArrowLeft, CalendarOff, Clock, Pencil, Plus, Shuffle, Trash2, Trophy, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { Category, Court, LeagueSlot, Match, Team, TeamAvailability, Tournament, TournamentDay, Zone } from "@/lib/types";
-import { buildBracket, computeStandings, isTeamAvailable, matchWinner, proposeZones, roundRobinPairs } from "@/lib/tournament-logic";
+import type { Category, Court, LeagueSlot, Match, Team, TeamAvailability, TeamUnavailability, Tournament, TournamentDay, Zone } from "@/lib/types";
+import { buildBracket, computeStandings, isTeamAvailable, isTeamAvailableOnDate, matchWinner, proposeZones, roundRobinPairs } from "@/lib/tournament-logic";
 import { DIAS_SEMANA, roundRobinJourneys } from "@/lib/league-logic";
-import { toLocalDatetimeInput, localDateStr } from "@/lib/format";
+import { toLocalDatetimeInput, localDateStr, todayStr, formatDateRange } from "@/lib/format";
 import { autoScheduleTournament } from "@/lib/autoschedule";
 import { autoScheduleLeague } from "@/lib/league-autoschedule";
 import { repairMatches } from "@/lib/repair-schedule";
@@ -28,7 +28,9 @@ export function CategoryManage() {
   const [leagueSlots, setLeagueSlots] = useState<LeagueSlot[]>([]);
   const [days, setDays] = useState<TournamentDay[]>([]);
   const [teamAvailability, setTeamAvailability] = useState<TeamAvailability[]>([]);
+  const [teamUnavailability, setTeamUnavailability] = useState<TeamUnavailability[]>([]);
   const [openAvailabilityTeamId, setOpenAvailabilityTeamId] = useState<string | null>(null);
+  const [openUnavailabilityTeamId, setOpenUnavailabilityTeamId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("equipos");
 
   const [teamName, setTeamName] = useState("");
@@ -41,7 +43,7 @@ export function CategoryManage() {
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    const [{ data: tour }, { data: cat }, { data: t }, { data: z }, { data: m }, { data: co }, { data: ls }, { data: d }, { data: av }] = await Promise.all([
+    const [{ data: tour }, { data: cat }, { data: t }, { data: z }, { data: m }, { data: co }, { data: ls }, { data: d }, { data: av }, { data: un }] = await Promise.all([
       supabase.from("tournaments").select("*").eq("id", tournamentId!).maybeSingle(),
       supabase.from("categories").select("*").eq("id", categoryId!).maybeSingle(),
       supabase.from("teams").select("*").eq("category_id", categoryId!).order("name"),
@@ -51,6 +53,7 @@ export function CategoryManage() {
       supabase.from("horarios_liga").select("*").eq("tournament_id", tournamentId!),
       supabase.from("tournament_days").select("*").eq("tournament_id", tournamentId!),
       supabase.from("team_availability").select("*, teams!inner(category_id)").eq("teams.category_id", categoryId!),
+      supabase.from("team_unavailability").select("*, teams!inner(category_id)").eq("teams.category_id", categoryId!),
     ]);
     setTournament(tour ?? null);
     setCategory(cat ?? null);
@@ -61,6 +64,7 @@ export function CategoryManage() {
     setLeagueSlots(ls ?? []);
     setDays(d ?? []);
     setTeamAvailability(av ?? []);
+    setTeamUnavailability(un ?? []);
     if (tour) setIdaVuelta(tour.ida_vuelta);
   }
 
@@ -152,6 +156,42 @@ export function CategoryManage() {
   // agendado, así que no hace falta reacomodar nada solo por sacarla.
   async function removeAvailability(availabilityId: string) {
     await supabase.from("team_availability").delete().eq("id", availabilityId);
+    load();
+  }
+
+  // ============ AUSENCIA POR FECHAS (equipo que no puede jugar entre dos días puntuales) ============
+  /** Igual que `repairTeamAvailability` pero para rangos de fechas concretas: reacomoda SOLO
+   *  los partidos de este equipo que ya tenía agendados y que caen dentro de algún rango
+   *  cargado — el resto del fixture no se toca. */
+  async function repairTeamUnavailability(teamId: string) {
+    setBusy(true);
+    const [{ data: ranges }, { data: matches }] = await Promise.all([
+      supabase.from("team_unavailability").select("team_id, start_date, end_date").eq("team_id", teamId),
+      supabase.from("matches").select("id, scheduled_at").or(`team1_id.eq.${teamId},team2_id.eq.${teamId}`).is("winner_id", null).not("scheduled_at", "is", null),
+    ]);
+    const invalidIds = (matches ?? [])
+      .filter((m) => !isTeamAvailableOnDate(ranges ?? [], teamId, m.scheduled_at as string))
+      .map((m) => m.id);
+    const { unscheduled } = await repairMatches(tournamentId!, invalidIds);
+    setBusy(false);
+    if (unscheduled > 0) {
+      setError(
+        `Ojo: no quedó lugar para reacomodar ${unscheduled} partido${unscheduled === 1 ? "" : "s"} de este equipo — agregá más horarios y volvé a tocar "Autocompletar horarios".`,
+      );
+    } else {
+      setError(null);
+    }
+  }
+
+  async function addUnavailability(teamId: string, startDate: string, endDate: string) {
+    await supabase.from("team_unavailability").insert({ team_id: teamId, start_date: startDate, end_date: endDate });
+    await repairTeamUnavailability(teamId);
+    load();
+  }
+
+  // Sacar un rango solo AMPLÍA lo que el equipo puede jugar — no hace falta reacomodar nada.
+  async function removeUnavailability(id: string) {
+    await supabase.from("team_unavailability").delete().eq("id", id);
     load();
   }
 
@@ -514,6 +554,7 @@ export function CategoryManage() {
               <div className="flex flex-col gap-1.5">
                 {teams.map((team) => {
                   const windows = teamAvailability.filter((a) => a.team_id === team.id);
+                  const ranges = teamUnavailability.filter((u) => u.team_id === team.id);
                   return (
                   <div key={team.id} className="flex flex-col gap-2 rounded-lg bg-zinc-50 px-3 py-2">
                     <div className="flex items-center justify-between gap-2">
@@ -540,6 +581,9 @@ export function CategoryManage() {
                           {windows.length > 0 && (
                             <span className="ml-1.5 text-xs font-medium text-amber-700">· {windows.length} franja{windows.length === 1 ? "" : "s"}</span>
                           )}
+                          {ranges.length > 0 && (
+                            <span className="ml-1.5 text-xs font-medium text-red-700">· {ranges.length} ausencia{ranges.length === 1 ? "" : "s"}</span>
+                          )}
                         </span>
                         <div className="flex items-center gap-2">
                           {zones.length > 0 && (
@@ -561,6 +605,13 @@ export function CategoryManage() {
                           >
                             <Clock className="h-4 w-4" />
                           </button>
+                          <button
+                            onClick={() => setOpenUnavailabilityTeamId((cur) => (cur === team.id ? null : team.id))}
+                            className={`rounded-md p-1.5 hover:bg-zinc-100 ${ranges.length > 0 ? "text-red-600" : "text-zinc-500"}`}
+                            aria-label={`Días que no puede jugar ${team.name}`}
+                          >
+                            <CalendarOff className="h-4 w-4" />
+                          </button>
                           <button onClick={() => startEditTeam(team)} className="rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100" aria-label={`Editar ${team.name}`}>
                             <Pencil className="h-4 w-4" />
                           </button>
@@ -576,6 +627,13 @@ export function CategoryManage() {
                         windows={windows}
                         onAdd={(dias, inicio, fin) => addAvailability(team.id, dias, inicio, fin)}
                         onRemove={removeAvailability}
+                      />
+                    )}
+                    {openUnavailabilityTeamId === team.id && (
+                      <TeamUnavailabilityEditor
+                        ranges={ranges}
+                        onAdd={(start, end) => addUnavailability(team.id, start, end)}
+                        onRemove={removeUnavailability}
                       />
                     )}
                   </div>
@@ -847,6 +905,56 @@ function TeamAvailabilityEditor({
         <input type="time" value={fin} onChange={(e) => setFin(e.target.value)} className="rounded-md border border-zinc-300 px-2 py-1 text-xs" />
         <Button variant="secondary" className="px-2 py-1 text-xs" onClick={handleAdd} disabled={selectedDays.size === 0}>
           <Plus className="h-3 w-3" /> Agregar {selectedDays.size > 1 ? `${selectedDays.size} días` : "franja"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Rangos de fechas en los que UNA pareja puntual NO puede jugar (viaje, lesión, etc.) — a
+ * diferencia de `TeamAvailabilityEditor` (una franja semanal que se repite todas las
+ * semanas), esto es una ausencia puntual entre dos fechas concretas.
+ */
+function TeamUnavailabilityEditor({
+  ranges, onAdd, onRemove,
+}: {
+  ranges: TeamUnavailability[];
+  onAdd: (startDate: string, endDate: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  const [start, setStart] = useState(todayStr());
+  const [end, setEnd] = useState(todayStr());
+
+  function handleAdd() {
+    if (!start || !end || end < start) return;
+    onAdd(start, end);
+  }
+
+  return (
+    <div className="rounded-lg border border-red-200 bg-red-50 p-2">
+      <p className="mb-1.5 text-[11px] text-red-800">
+        Mientras tenga un rango cargado, esta pareja no se agenda ningún día dentro de esas fechas — sus partidos que ya estaban ahí se reacomodan solos.
+      </p>
+      {ranges.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {ranges.map((r) => (
+            <span key={r.id} className="flex items-center gap-1 rounded-full bg-white py-1 pl-2.5 pr-1 text-xs text-red-800 ring-1 ring-red-300">
+              {formatDateRange(r.start_date, r.end_date)}
+              <button onClick={() => onRemove(r.id)} className="rounded-full p-0.5 hover:bg-red-100" aria-label="Quitar ausencia">
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-xs text-zinc-500">del</span>
+        <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="rounded-md border border-zinc-300 px-2 py-1 text-xs" />
+        <span className="text-xs text-zinc-500">al</span>
+        <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className="rounded-md border border-zinc-300 px-2 py-1 text-xs" />
+        <Button variant="secondary" className="px-2 py-1 text-xs" onClick={handleAdd} disabled={!start || !end || end < start}>
+          <Plus className="h-3 w-3" /> Agregar ausencia
         </Button>
       </div>
     </div>

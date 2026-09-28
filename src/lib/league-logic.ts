@@ -1,5 +1,5 @@
-import type { LeagueSlot, ScheduleBlackout, TeamAvailability } from "./types";
-import { isBlackedOut, isTeamAvailable, slotKey, type ExistingSchedule, type ScheduleAssignment } from "./tournament-logic";
+import type { LeagueSlot, ScheduleBlackout, TeamAvailability, TeamUnavailability } from "./types";
+import { isBlackedOut, isTeamAvailable, isTeamAvailableOnDate, slotKey, type ExistingSchedule, type ScheduleAssignment } from "./tournament-logic";
 
 export type CourtSlot = Pick<LeagueSlot, "court_id" | "dia_semana" | "hora_inicio" | "hora_fin">;
 
@@ -114,6 +114,7 @@ export function buildLeagueSchedule(
   alreadyScheduled: ExistingSchedule[] = [],
   blackouts: Pick<ScheduleBlackout, "date" | "court_id" | "hora_inicio">[] = [],
   availability: Pick<TeamAvailability, "team_id" | "dia_semana" | "hora_inicio" | "hora_fin">[] = [],
+  unavailability: Pick<TeamUnavailability, "team_id" | "start_date" | "end_date">[] = [],
 ): { assignments: ScheduleAssignment[]; unscheduledCount: number } {
   const queues = categoryQueues.map((q) => [...q]).filter((q) => q.length > 0);
   let remainingCount = queues.reduce((n, q) => n + q.length, 0);
@@ -169,7 +170,9 @@ export function buildLeagueSchedule(
             !busyDay.get(m.team1_id)?.has(day) &&
             !busyDay.get(m.team2_id)?.has(day) &&
             isTeamAvailable(availability, m.team1_id, iso, durationMinutes) &&
-            isTeamAvailable(availability, m.team2_id, iso, durationMinutes),
+            isTeamAvailable(availability, m.team2_id, iso, durationMinutes) &&
+            isTeamAvailableOnDate(unavailability, m.team1_id, iso) &&
+            isTeamAvailableOnDate(unavailability, m.team2_id, iso),
         );
         if (idx === -1) continue;
         const match = queue.splice(idx, 1)[0];

@@ -1,4 +1,4 @@
-import type { Match, ScheduleBlackout, TeamAvailability, ZoneStanding } from "./types";
+import type { Match, ScheduleBlackout, TeamAvailability, TeamUnavailability, ZoneStanding } from "./types";
 import { localDateStr } from "./format";
 
 function timeToMinutes(hhmm: string): number {
@@ -291,6 +291,19 @@ export function isTeamAvailable(
   });
 }
 
+/** true si ESE equipo puede jugar ese día calendario — un equipo sin ningún rango cargado
+ *  no tiene ninguna restricción. A diferencia de `isTeamAvailable` (franja semanal que se
+ *  repite), acá el rango es de fechas concretas ("del 10 al 15 de julio"), pensado para una
+ *  ausencia puntual (viaje, lesión) más que para un horario fijo de todas las semanas. */
+export function isTeamAvailableOnDate(
+  ranges: Pick<TeamUnavailability, "team_id" | "start_date" | "end_date">[],
+  teamId: string,
+  iso: string,
+): boolean {
+  const day = localDateStr(iso);
+  return !ranges.some((r) => r.team_id === teamId && day >= r.start_date && day <= r.end_date);
+}
+
 /**
  * Reparte partidos entre las canchas disponibles, día por día, respetando dos reglas
  * duras: un mismo equipo nunca queda en dos partidos al mismo horario, y entre dos
@@ -330,6 +343,7 @@ export function buildSchedule(
   alreadyScheduled: ExistingSchedule[] = [],
   blackouts: Pick<ScheduleBlackout, "date" | "court_id" | "hora_inicio">[] = [],
   availability: Pick<TeamAvailability, "team_id" | "dia_semana" | "hora_inicio" | "hora_fin">[] = [],
+  unavailability: Pick<TeamUnavailability, "team_id" | "start_date" | "end_date">[] = [],
 ): { assignments: ScheduleAssignment[]; unscheduledCount: number } {
   const queues = categoryQueues.map((q) => [...q]).filter((q) => q.length > 0);
   let remainingCount = queues.reduce((n, q) => n + q.length, 0);
@@ -372,6 +386,8 @@ export function buildSchedule(
           if (m.team2_id && ts - (lastPlayed.get(m.team2_id) ?? -Infinity) < minGapMs) return false;
           if (m.team1_id && !isTeamAvailable(availability, m.team1_id, iso, durationMinutes)) return false;
           if (m.team2_id && !isTeamAvailable(availability, m.team2_id, iso, durationMinutes)) return false;
+          if (m.team1_id && !isTeamAvailableOnDate(unavailability, m.team1_id, iso)) return false;
+          if (m.team2_id && !isTeamAvailableOnDate(unavailability, m.team2_id, iso)) return false;
           return true;
         });
         if (idx === -1) continue;

@@ -35,6 +35,11 @@ export async function autoScheduleTournament(tournamentId: string): Promise<Auto
     .select("team_id, dia_semana, hora_inicio, hora_fin, teams!inner(category_id)")
     .in("teams.category_id", categoryIds);
 
+  const { data: unavailability } = await supabase
+    .from("team_unavailability")
+    .select("team_id, start_date, end_date, teams!inner(category_id)")
+    .in("teams.category_id", categoryIds);
+
   const [{ data: replanPool }, { data: locked }] = await Promise.all([
     // Todo lo que no se jugó y nadie movió a mano — se vuelve a repartir de cero cada vez,
     // tenga o no ya un horario puesto por una corrida anterior del auto-agendado.
@@ -88,6 +93,7 @@ export async function autoScheduleTournament(tournamentId: string): Promise<Auto
     (locked ?? []).filter((m): m is typeof m & { court_id: string; scheduled_at: string } => !!m.court_id && !!m.scheduled_at),
     blackouts ?? [],
     availability ?? [],
+    unavailability ?? [],
   );
 
   for (const a of assignments) {
