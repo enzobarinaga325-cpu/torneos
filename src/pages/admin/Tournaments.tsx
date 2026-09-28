@@ -194,9 +194,9 @@ export function Tournaments() {
       ) : (
         <div className="flex flex-col gap-3">
           {tournaments.map((t) => (
-            <Card key={t.id} className="flex flex-wrap items-center gap-3">
+            <Card key={t.id} className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
               <div className="min-w-[180px] flex-1">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Link to={`/admin/torneos/${t.id}`} className="font-medium hover:underline">
                     {t.name}
                   </Link>
@@ -221,16 +221,18 @@ export function Tournaments() {
                   </p>
                 )}
               </div>
-              <Link to={`/admin/torneos/${t.id}`}>
-                <Button variant="secondary">Gestionar</Button>
-              </Link>
-              <Button variant="secondary" onClick={() => togglePublished(t)}>
-                {t.published ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                {t.published ? "Despublicar" : "Publicar"}
-              </Button>
-              <Button variant="danger" onClick={() => deleteTournament(t)}>
-                <Trash2 className="h-3.5 w-3.5" /> Borrar
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Link to={`/admin/torneos/${t.id}`}>
+                  <Button variant="secondary">Gestionar</Button>
+                </Link>
+                <Button variant="secondary" onClick={() => togglePublished(t)}>
+                  {t.published ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  {t.published ? "Despublicar" : "Publicar"}
+                </Button>
+                <Button variant="danger" onClick={() => deleteTournament(t)}>
+                  <Trash2 className="h-3.5 w-3.5" /> Borrar
+                </Button>
+              </div>
             </Card>
           ))}
         </div>
