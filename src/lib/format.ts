@@ -32,11 +32,16 @@ function formatDay(dateStr: string): { day: number; month: string } {
   return { day: d, month: dt.toLocaleDateString("es-AR", { month: "long" }) };
 }
 
-/** "9 al 12 de julio de 2026", o un solo día si no hay fecha de fin (o son iguales). */
+/**
+ * "9 al 12 de julio de 2026", o un solo día si no hay fecha de fin (o son iguales). Si
+ * `end` es explícitamente `null` (el admin marcó "sin fecha de fin"), en vez de mostrar
+ * un solo día raro para una liga que en realidad dura meses, aclara que está en curso.
+ */
 export function formatDateRange(start: string | null, end: string | null): string | null {
   if (!start) return null;
   const s = formatDay(start);
   const year = start.slice(0, 4);
+  if (end === null) return `Desde el ${s.day} de ${s.month} de ${year} — en curso`;
   if (!end || end === start) return `${s.day} de ${s.month} de ${year}`;
   const e = formatDay(end);
   if (s.month === e.month) return `${s.day} al ${e.day} de ${s.month} de ${year}`;

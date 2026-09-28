@@ -31,10 +31,11 @@ export function Tournaments() {
   const [modalidad, setModalidad] = useState<Modalidad>("torneo");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [noEndDate, setNoEndDate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingDatesFor, setEditingDatesFor] = useState<string | null>(null);
-  const [dateDraft, setDateDraft] = useState({ start: "", end: "" });
+  const [dateDraft, setDateDraft] = useState({ start: "", end: "", noEnd: false });
   const [settings, setSettings] = useState<SiteSettings>({ id: 1, background_url: null });
   const [uploadingBg, setUploadingBg] = useState(false);
 
@@ -91,7 +92,7 @@ export function Tournaments() {
     if (existing.has(slug)) slug = `${slug}-${Date.now().toString(36)}`;
     const { error } = await supabase
       .from("tournaments")
-      .insert({ name: name.trim(), slug, modalidad, start_date: startDate || null, end_date: endDate || startDate || null });
+      .insert({ name: name.trim(), slug, modalidad, start_date: startDate || null, end_date: noEndDate ? null : endDate || startDate || null });
     setCreating(false);
     if (error) {
       setError(error.message);
@@ -101,18 +102,19 @@ export function Tournaments() {
     setModalidad("torneo");
     setStartDate("");
     setEndDate("");
+    setNoEndDate(false);
     load();
   }
 
   function openDateEditor(t: Tournament) {
     setEditingDatesFor(t.id);
-    setDateDraft({ start: t.start_date ?? "", end: t.end_date ?? "" });
+    setDateDraft({ start: t.start_date ?? "", end: t.end_date ?? "", noEnd: t.start_date != null && t.end_date == null });
   }
 
   async function saveDates(t: Tournament) {
     if (!(await run(supabase
       .from("tournaments")
-      .update({ start_date: dateDraft.start || null, end_date: dateDraft.end || dateDraft.start || null })
+      .update({ start_date: dateDraft.start || null, end_date: dateDraft.noEnd ? null : dateDraft.end || dateDraft.start || null })
       .eq("id", t.id)))) return;
     setEditingDatesFor(null);
     load();
@@ -189,7 +191,17 @@ export function Tournaments() {
           </div>
           <div className="w-44">
             <Label>Fecha de fin (opcional)</Label>
-            <Input type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} />
+            <Input
+              type="date"
+              value={endDate}
+              min={startDate || undefined}
+              disabled={noEndDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+            <label className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500">
+              <input type="checkbox" checked={noEndDate} onChange={(e) => setNoEndDate(e.target.checked)} />
+              Sin fecha de fin (en curso)
+            </label>
           </div>
           <Button type="submit" disabled={creating}>
             <Plus className="h-3.5 w-3.5" /> Crear
@@ -218,7 +230,22 @@ export function Tournaments() {
                   <div className="mt-1 flex flex-wrap items-center gap-2">
                     <Input type="date" value={dateDraft.start} onChange={(e) => setDateDraft((d) => ({ ...d, start: e.target.value }))} className="w-36 py-1 text-xs" />
                     <span className="text-xs text-zinc-400">al</span>
-                    <Input type="date" value={dateDraft.end} min={dateDraft.start || undefined} onChange={(e) => setDateDraft((d) => ({ ...d, end: e.target.value }))} className="w-36 py-1 text-xs" />
+                    <Input
+                      type="date"
+                      value={dateDraft.end}
+                      min={dateDraft.start || undefined}
+                      disabled={dateDraft.noEnd}
+                      onChange={(e) => setDateDraft((d) => ({ ...d, end: e.target.value }))}
+                      className="w-36 py-1 text-xs"
+                    />
+                    <label className="flex items-center gap-1.5 text-xs text-zinc-500">
+                      <input
+                        type="checkbox"
+                        checked={dateDraft.noEnd}
+                        onChange={(e) => setDateDraft((d) => ({ ...d, noEnd: e.target.checked }))}
+                      />
+                      En curso
+                    </label>
                     <Button className="px-2 py-1 text-xs" onClick={() => saveDates(t)}>Guardar</Button>
                     <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => setEditingDatesFor(null)}>Cancelar</Button>
                   </div>
