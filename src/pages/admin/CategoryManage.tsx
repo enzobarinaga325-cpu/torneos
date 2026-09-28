@@ -737,15 +737,17 @@ export function CategoryManage() {
 
               <div>
                 <h3 className="mb-2 text-sm font-semibold text-zinc-700">Cargar horarios y resultados</h3>
-                <div className="flex gap-4 overflow-x-auto pb-2">
+                <div className="flex flex-col gap-3">
                   {[...new Set(fixtureMatches.map((m) => m.round_order))].sort((a, b) => (a ?? 0) - (b ?? 0)).map((ro) => {
                     const roundMatches = fixtureMatches.filter((m) => m.round_order === ro);
                     return (
-                      <div key={ro} className="flex min-w-[260px] flex-col gap-2">
-                        <h4 className="text-sm font-semibold text-zinc-700">{roundMatches[0]?.round_name}</h4>
-                        {roundMatches.map((m) => (
-                          <MatchRow key={m.id} match={m} teams={teams} courts={courts} onTeamChange={updateMatchTeam} onCourtChange={updateMatchCourt} onScheduleChange={updateMatchSchedule} onSaveResult={saveResult} compact />
-                        ))}
+                      <div key={ro} className="rounded-lg border border-zinc-200 bg-zinc-50/60 p-3">
+                        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">{roundMatches[0]?.round_name}</h4>
+                        <div className="flex flex-col gap-2">
+                          {roundMatches.map((m) => (
+                            <MatchRow key={m.id} match={m} teams={teams} courts={courts} onTeamChange={updateMatchTeam} onCourtChange={updateMatchCourt} onScheduleChange={updateMatchSchedule} onSaveResult={saveResult} />
+                          ))}
+                        </div>
                       </div>
                     );
                   })}
@@ -784,15 +786,17 @@ export function CategoryManage() {
                   </div>
                   <div>
                     <h4 className="mb-2 text-sm font-semibold text-zinc-700">Fixture por jornada</h4>
-                    <div className="flex gap-4 overflow-x-auto pb-2">
+                    <div className="flex flex-col gap-3">
                       {[...new Set(zoneMatches2.map((m) => m.round_order))].sort((a, b) => (a ?? 0) - (b ?? 0)).map((ro) => {
                         const roundMatches = zoneMatches2.filter((m) => m.round_order === ro);
                         return (
-                          <div key={ro} className="flex min-w-[260px] flex-col gap-2">
-                            <h5 className="text-sm font-semibold text-zinc-700">{roundMatches[0]?.round_name}</h5>
-                            {roundMatches.map((m) => (
-                              <MatchRow key={m.id} match={m} teams={teams} courts={courts} onTeamChange={updateMatchTeam} onCourtChange={updateMatchCourt} onScheduleChange={updateMatchSchedule} onSaveResult={saveResult} compact />
-                            ))}
+                          <div key={ro} className="rounded-lg border border-zinc-200 bg-zinc-50/60 p-3">
+                            <h5 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">{roundMatches[0]?.round_name}</h5>
+                            <div className="flex flex-col gap-2">
+                              {roundMatches.map((m) => (
+                                <MatchRow key={m.id} match={m} teams={teams} courts={courts} onTeamChange={updateMatchTeam} onCourtChange={updateMatchCourt} onScheduleChange={updateMatchSchedule} onSaveResult={saveResult} />
+                              ))}
+                            </div>
                           </div>
                         );
                       })}
@@ -810,15 +814,17 @@ export function CategoryManage() {
 
               <div>
                 <h3 className="mb-2 text-sm font-semibold text-zinc-700">Fixture por jornada</h3>
-                <div className="flex gap-4 overflow-x-auto pb-2">
+                <div className="flex flex-col gap-3">
                   {[...new Set(ligaMatches.map((m) => m.round_order))].sort((a, b) => (a ?? 0) - (b ?? 0)).map((ro) => {
                     const roundMatches = ligaMatches.filter((m) => m.round_order === ro);
                     return (
-                      <div key={ro} className="flex min-w-[260px] flex-col gap-2">
-                        <h4 className="text-sm font-semibold text-zinc-700">{roundMatches[0]?.round_name}</h4>
-                        {roundMatches.map((m) => (
-                          <MatchRow key={m.id} match={m} teams={teams} courts={courts} onTeamChange={updateMatchTeam} onCourtChange={updateMatchCourt} onScheduleChange={updateMatchSchedule} onSaveResult={saveResult} compact />
-                        ))}
+                      <div key={ro} className="rounded-lg border border-zinc-200 bg-zinc-50/60 p-3">
+                        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">{roundMatches[0]?.round_name}</h4>
+                        <div className="flex flex-col gap-2">
+                          {roundMatches.map((m) => (
+                            <MatchRow key={m.id} match={m} teams={teams} courts={courts} onTeamChange={updateMatchTeam} onCourtChange={updateMatchCourt} onScheduleChange={updateMatchSchedule} onSaveResult={saveResult} />
+                          ))}
+                        </div>
                       </div>
                     );
                   })}
@@ -964,7 +970,7 @@ function TeamUnavailabilityEditor({
 type SetsDraft = Pick<Match, "set1_team1" | "set1_team2" | "set2_team1" | "set2_team2" | "set3_team1" | "set3_team2">;
 
 function MatchRow({
-  match, teams, courts, onTeamChange, onCourtChange, onScheduleChange, onSaveResult, compact,
+  match, teams, courts, onTeamChange, onCourtChange, onScheduleChange, onSaveResult,
 }: {
   match: Match;
   teams: Team[];
@@ -973,7 +979,6 @@ function MatchRow({
   onCourtChange: (m: Match, courtId: string) => void;
   onScheduleChange: (m: Match, iso: string) => void;
   onSaveResult: (m: Match, sets: SetsDraft) => void;
-  compact?: boolean;
 }) {
   const [sets, setSets] = useState<SetsDraft>({
     set1_team1: match.set1_team1, set1_team2: match.set1_team2,
@@ -994,66 +999,71 @@ function MatchRow({
   }
 
   return (
-    <div className={`rounded-lg border border-zinc-200 p-2.5 ${compact ? "text-xs" : "text-sm"}`}>
-      <div className="grid grid-cols-2 gap-2">
-        <Select value={match.team1_id ?? ""} onChange={(e) => onTeamChange(match, 1, e.target.value)} className={match.winner_id === match.team1_id ? "font-bold text-emerald-700" : ""}>
-          <option value="">—</option>
-          {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </Select>
-        <Select value={match.team2_id ?? ""} onChange={(e) => onTeamChange(match, 2, e.target.value)} className={match.winner_id === match.team2_id ? "font-bold text-emerald-700" : ""}>
-          <option value="">—</option>
-          {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </Select>
-      </div>
+    <div className="rounded-lg border border-zinc-200 bg-white p-2.5 text-sm">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex min-w-[240px] flex-1 items-center gap-2">
+          <Select value={match.team1_id ?? ""} onChange={(e) => onTeamChange(match, 1, e.target.value)} className={`flex-1 ${match.winner_id === match.team1_id ? "font-bold text-emerald-700" : ""}`}>
+            <option value="">—</option>
+            {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </Select>
+          <span className="shrink-0 text-xs font-medium text-zinc-400">vs</span>
+          <Select value={match.team2_id ?? ""} onChange={(e) => onTeamChange(match, 2, e.target.value)} className={`flex-1 ${match.winner_id === match.team2_id ? "font-bold text-emerald-700" : ""}`}>
+            <option value="">—</option>
+            {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </Select>
+        </div>
 
-      {isBye ? (
-        <p className="mt-1.5 text-center text-[11px] text-zinc-400">Pase directo</p>
-      ) : (
-        <>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <Select value={match.court_id ?? ""} onChange={(e) => onCourtChange(match, e.target.value)}>
-              <option value="">Cancha</option>
-              {courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </Select>
-            <input
-              // key por scheduled_at: si este horario cambia desde afuera (p. ej. porque se
-              // intercambió con otro partido al reagendar uno distinto), el input no es
-              // controlado (defaultValue), así que sin esto quedaría mostrando la hora vieja
-              // hasta recargar la página — parecía que el cambio "no se guardó".
-              key={match.scheduled_at ?? "sin-horario"}
-              type="datetime-local"
-              defaultValue={match.scheduled_at ? toLocalDatetimeInput(match.scheduled_at) : ""}
-              onBlur={(e) => onScheduleChange(match, e.target.value ? new Date(e.target.value).toISOString() : "")}
-              className="rounded-lg border border-zinc-300 px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
-            />
-          </div>
-          <div className="mt-2 flex flex-col gap-1.5">
-            <div className="flex items-center gap-1.5">
-              <span className="w-10 shrink-0 text-[10px] uppercase text-zinc-400">Set 1</span>
-              <input type="number" min={0} value={sets.set1_team1 ?? ""} onChange={(e) => setField("set1_team1", e.target.value)} className="w-12 rounded-md border border-zinc-300 px-2 py-1 text-center text-xs" />
-              <span className="text-zinc-400">-</span>
-              <input type="number" min={0} value={sets.set1_team2 ?? ""} onChange={(e) => setField("set1_team2", e.target.value)} className="w-12 rounded-md border border-zinc-300 px-2 py-1 text-center text-xs" />
+        {isBye ? (
+          <p className="text-xs text-zinc-400">Pase directo</p>
+        ) : (
+          <>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Select value={match.court_id ?? ""} onChange={(e) => onCourtChange(match, e.target.value)} className="w-28">
+                <option value="">Cancha</option>
+                {courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+              <input
+                // key por scheduled_at: si este horario cambia desde afuera (p. ej. porque se
+                // intercambió con otro partido al reagendar uno distinto), el input no es
+                // controlado (defaultValue), así que sin esto quedaría mostrando la hora vieja
+                // hasta recargar la página — parecía que el cambio "no se guardó".
+                key={match.scheduled_at ?? "sin-horario"}
+                type="datetime-local"
+                defaultValue={match.scheduled_at ? toLocalDatetimeInput(match.scheduled_at) : ""}
+                onBlur={(e) => onScheduleChange(match, e.target.value ? new Date(e.target.value).toISOString() : "")}
+                className="w-[172px] rounded-lg border border-zinc-300 px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
+              />
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-10 shrink-0 text-[10px] uppercase text-zinc-400">Set 2</span>
-              <input type="number" min={0} value={sets.set2_team1 ?? ""} onChange={(e) => setField("set2_team1", e.target.value)} className="w-12 rounded-md border border-zinc-300 px-2 py-1 text-center text-xs" />
-              <span className="text-zinc-400">-</span>
-              <input type="number" min={0} value={sets.set2_team2 ?? ""} onChange={(e) => setField("set2_team2", e.target.value)} className="w-12 rounded-md border border-zinc-300 px-2 py-1 text-center text-xs" />
-            </div>
-            {(needsThirdSet || sets.set3_team1 != null || sets.set3_team2 != null) && (
-              <div className="flex items-center gap-1.5">
-                <span className="w-10 shrink-0 text-[10px] uppercase text-zinc-400">Set 3</span>
-                <input type="number" min={0} value={sets.set3_team1 ?? ""} onChange={(e) => setField("set3_team1", e.target.value)} className="w-12 rounded-md border border-zinc-300 px-2 py-1 text-center text-xs" />
+
+            <div className="flex shrink-0 items-center gap-3">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] uppercase text-zinc-400">Set 1</span>
+                <input type="number" min={0} value={sets.set1_team1 ?? ""} onChange={(e) => setField("set1_team1", e.target.value)} className="w-11 rounded-md border border-zinc-300 px-1.5 py-1 text-center text-xs" />
                 <span className="text-zinc-400">-</span>
-                <input type="number" min={0} value={sets.set3_team2 ?? ""} onChange={(e) => setField("set3_team2", e.target.value)} className="w-12 rounded-md border border-zinc-300 px-2 py-1 text-center text-xs" />
+                <input type="number" min={0} value={sets.set1_team2 ?? ""} onChange={(e) => setField("set1_team2", e.target.value)} className="w-11 rounded-md border border-zinc-300 px-1.5 py-1 text-center text-xs" />
               </div>
-            )}
-            <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => onSaveResult(match, sets)}>
-              {played ? "Actualizar resultado" : "Guardar resultado"}
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] uppercase text-zinc-400">Set 2</span>
+                <input type="number" min={0} value={sets.set2_team1 ?? ""} onChange={(e) => setField("set2_team1", e.target.value)} className="w-11 rounded-md border border-zinc-300 px-1.5 py-1 text-center text-xs" />
+                <span className="text-zinc-400">-</span>
+                <input type="number" min={0} value={sets.set2_team2 ?? ""} onChange={(e) => setField("set2_team2", e.target.value)} className="w-11 rounded-md border border-zinc-300 px-1.5 py-1 text-center text-xs" />
+              </div>
+              {(needsThirdSet || sets.set3_team1 != null || sets.set3_team2 != null) && (
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] uppercase text-zinc-400">Set 3</span>
+                  <input type="number" min={0} value={sets.set3_team1 ?? ""} onChange={(e) => setField("set3_team1", e.target.value)} className="w-11 rounded-md border border-zinc-300 px-1.5 py-1 text-center text-xs" />
+                  <span className="text-zinc-400">-</span>
+                  <input type="number" min={0} value={sets.set3_team2 ?? ""} onChange={(e) => setField("set3_team2", e.target.value)} className="w-11 rounded-md border border-zinc-300 px-1.5 py-1 text-center text-xs" />
+                </div>
+              )}
+            </div>
+
+            <Button variant="secondary" className="shrink-0 px-2 py-1 text-xs" onClick={() => onSaveResult(match, sets)}>
+              {played ? "Actualizar" : "Guardar"}
             </Button>
-          </div>
-        </>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
