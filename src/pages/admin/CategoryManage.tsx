@@ -557,7 +557,7 @@ export function CategoryManage() {
                   const ranges = teamUnavailability.filter((u) => u.team_id === team.id);
                   return (
                   <div key={team.id} className="flex flex-col gap-2 rounded-lg bg-zinc-50 px-3 py-2">
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                     {editingTeamId === team.id ? (
                       <form
                         className="flex flex-1 items-center gap-2"
