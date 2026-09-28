@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, CloudRain, Image as ImageIcon, Printer, RefreshCw, Plus, RotateCcw, Trash2, X } from "lucide-react";
+import { ArrowLeft, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, CloudRain, Image as ImageIcon, Printer, RefreshCw, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, LeagueSlot, Match, Modalidad, ScheduleBlackout, Team, Tournament, TournamentDay } from "@/lib/types";
 import { matchWinner } from "@/lib/tournament-logic";
 import { autoScheduleTournament } from "@/lib/autoschedule";
 import { autoScheduleLeague } from "@/lib/league-autoschedule";
 import { fillScheduleGaps } from "@/lib/fill-gaps";
+import { checkFixtureHealth, type FixtureHealthReport } from "@/lib/fixture-health";
 import { cancelDay, cancelTurn, removeBlackout } from "@/lib/blackouts";
 import { uploadSiteImage } from "@/lib/images";
 import { DIAS_SEMANA } from "@/lib/league-logic";
 import { validateLeagueSlotTime, validateTournamentDaySlotTime } from "@/lib/slot-validation";
-import { localDateStr, todayStr } from "@/lib/format";
+import { localDateStr, todayStr, toLocalDatetimeInput } from "@/lib/format";
 import { DailyFixtureStory } from "@/components/DailyFixtureStory";
 import { ParticipantsList } from "@/components/ParticipantsList";
 import { Badge, Button, Card, Input, Label, Select, Spinner } from "@/components/ui";
@@ -47,6 +48,7 @@ export function TournamentManage() {
   const [days, setDays] = useState<TournamentDay[]>([]);
   const [allTeams, setAllTeams] = useState<Team[]>([]);
   const [allMatches, setAllMatches] = useState<Match[]>([]);
+  const [unscheduledMatches, setUnscheduledMatches] = useState<Match[]>([]);
   const [leagueSlots, setLeagueSlots] = useState<LeagueSlot[]>([]);
   const [blackouts, setBlackouts] = useState<ScheduleBlackout[]>([]);
   const [selectedGridDay, setSelectedGridDay] = useState("");
@@ -58,6 +60,8 @@ export function TournamentManage() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [horariosOpen, setHorariosOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [checkingFixture, setCheckingFixture] = useState(false);
+  const [healthReport, setHealthReport] = useState<FixtureHealthReport | null>(null);
 
   async function load() {
     const [{ data: t }, { data: c }, { data: cats }, { data: d }, { data: ls }, { data: bo }] = await Promise.all([
@@ -78,12 +82,22 @@ export function TournamentManage() {
 
     if (cats && cats.length > 0) {
       const categoryIds = cats.map((c) => c.id);
-      const [{ data: allT }, { data: allM }] = await Promise.all([
+      const [{ data: allT }, { data: allM }, { data: unschedM }] = await Promise.all([
         supabase.from("teams").select("*").in("category_id", categoryIds),
         supabase.from("matches").select("*").in("category_id", categoryIds).not("scheduled_at", "is", null),
+        supabase
+          .from("matches")
+          .select("*")
+          .in("category_id", categoryIds)
+          .eq("stage", "liga")
+          .is("winner_id", null)
+          .not("team1_id", "is", null)
+          .not("team2_id", "is", null)
+          .or("scheduled_at.is.null,court_id.is.null"),
       ]);
       setAllTeams(allT ?? []);
       setAllMatches((allM as Match[]) ?? []);
+      setUnscheduledMatches((unschedM as Match[]) ?? []);
       const dates = [...new Set((allM ?? []).map((m) => localDateStr(m.scheduled_at as string)))].sort();
       const today = todayStr();
       setSelectedGridDay((prev) => prev || dates.find((d) => d >= today) || dates[0] || "");
@@ -299,6 +313,17 @@ export function TournamentManage() {
       setError(`Se rellenaron ${filled} huecos. Quedaron ${remainingGaps} sin poder llenar (ningún partido pendiente encaja ahí).`);
     }
     load();
+  }
+
+  /** Revisión de solo lectura: nunca mueve ni cambia nada, solo informa si encuentra algo
+   *  raro (partidos sin agendar, en un horario ya no configurado, turnos duplicados, una
+   *  pareja jugando dos veces el mismo día, o en dos canchas a la misma hora). */
+  async function checkFixtureClick() {
+    setCheckingFixture(true);
+    setHealthReport(null);
+    const report = await checkFixtureHealth(id!);
+    setCheckingFixture(false);
+    setHealthReport(report);
   }
 
   /** Borra la cancha+horario de todos los partidos de liga (los resultados no se tocan). */
@@ -726,7 +751,27 @@ export function TournamentManage() {
           <Button variant="secondary" onClick={fillGapsClick} disabled={scheduling}>
             <RefreshCw className="h-3.5 w-3.5" /> {scheduling ? "Agendando…" : "Rellenar huecos"}
           </Button>
+          <Button variant="secondary" onClick={checkFixtureClick} disabled={checkingFixture}>
+            <ClipboardCheck className="h-3.5 w-3.5" /> {checkingFixture ? "Revisando…" : "Chequear el fixture"}
+          </Button>
         </div>
+
+        {healthReport && (
+          <div className={`mb-3 rounded-lg border p-3 text-sm ${healthReport.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+            {healthReport.ok ? (
+              <p>✓ Todo bien — revisé los {healthReport.totalMatches} partidos de liga y no encontré nada raro.</p>
+            ) : (
+              <>
+                <p className="mb-1.5 font-medium">Ojo, encontré {healthReport.issues.length} cosa{healthReport.issues.length === 1 ? "" : "s"} rara{healthReport.issues.length === 1 ? "" : "s"}:</p>
+                <ul className="list-disc pl-4">
+                  {healthReport.issues.map((issue) => (
+                    <li key={issue.type}>{issue.detail}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        )}
 
         {courts.length === 0 ? (
           <p className="text-xs text-zinc-500">Cargá al menos una cancha primero (más abajo, en "Canchas").</p>
@@ -842,6 +887,40 @@ export function TournamentManage() {
             onScheduleChange={updateMatchSchedule}
             onCancelTurn={handleCancelTurn}
           />
+        </Card>
+      )}
+
+      {isLiga && unscheduledMatches.length > 0 && (
+        <Card>
+          <h2 className="mb-1 text-sm font-semibold">Partidos sin agendar ({unscheduledMatches.length})</h2>
+          <p className="mb-3 text-xs text-zinc-500">
+            Quedaron sin cancha ni horario — puede pasar si una reparación puntual no encontró lugar. Elegiles cancha y fecha acá para sacarlos de esta lista.
+          </p>
+          <div className="flex flex-col gap-2">
+            {unscheduledMatches.map((m) => (
+              <div key={m.id} className="flex flex-wrap items-center gap-3 rounded-lg bg-zinc-50 px-3 py-2 text-sm">
+                <span className="shrink-0 rounded-full bg-zinc-200 px-2 py-0.5 text-xs font-medium text-zinc-600">
+                  {categoriesById[m.category_id]?.name ?? "?"}
+                </span>
+                <span className="flex-1 min-w-[180px]">
+                  {allTeamsById[m.team1_id ?? ""]?.name ?? "?"}
+                  <span className="mx-1.5 text-xs text-zinc-400">vs</span>
+                  {allTeamsById[m.team2_id ?? ""]?.name ?? "?"}
+                </span>
+                <Select value={m.court_id ?? ""} onChange={(e) => updateMatchCourt(m, e.target.value)} className="w-28 shrink-0">
+                  <option value="">Cancha</option>
+                  {courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </Select>
+                <input
+                  key={m.scheduled_at ?? "sin-horario"}
+                  type="datetime-local"
+                  defaultValue={m.scheduled_at ? toLocalDatetimeInput(m.scheduled_at) : ""}
+                  onBlur={(e) => updateMatchSchedule(m, e.target.value ? new Date(e.target.value).toISOString() : "")}
+                  className="w-[172px] shrink-0 rounded-lg border border-zinc-300 px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
+                />
+              </div>
+            ))}
+          </div>
         </Card>
       )}
 
