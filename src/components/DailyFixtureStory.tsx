@@ -2,25 +2,34 @@ import { useState } from "react";
 import { Download, Loader2, Pencil } from "lucide-react";
 import type { Category, Court, Match, Team } from "@/lib/types";
 import { useStoryDownload } from "@/lib/useStoryDownload";
+import { useDesignScale } from "@/lib/useDesignScale";
 import { localDateStr, toLocalDatetimeInput } from "@/lib/format";
 import { matchWinner } from "@/lib/tournament-logic";
 import { Button, Select } from "./ui";
-import fixtureBackground from "@/assets/fixture-background.png";
+import ordenDeJuegoBackground from "@/assets/orden-de-juego-background.jpg";
 
-const DIA_CORTO = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+const DIA_LARGO = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+
+// Todas las medidas de este cartel están pensadas para un diseño de referencia de 480px de
+// ancho -- exactamente 1080/2.25 -- porque la descarga (useStoryDownload) siempre captura a
+// 1080px físicos de ancho. El contenido real vive fijo a este ancho (ver `useDesignScale`) y
+// se escala visualmente para entrar en pantallas más angostas, así las proporciones del
+// diseño (fondo, tipografía, espaciados) salen siempre exactas sin importar el dispositivo.
+const DESIGN_WIDTH = 480;
+const HORA_COL_WIDTH = 65; // px de referencia
 
 type SetsDraft = Pick<Match, "set1_team1" | "set1_team2" | "set2_team1" | "set2_team2" | "set3_team1" | "set3_team2">;
 
 function timeLabel(iso: string): string {
-  // Formato 24hs (ej. "19:00") en vez de "07:00 p. m." -- ese sufijo obligaba a partir el
-  // horario en dos líneas dentro de una columna angosta, que quedaba apretado y feo.
   return new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-function dayLabel(dateStr: string): string {
+/** "Lunes 28 de septiembre" -- sin año, día completo (no abreviado). */
+function fullDayLabel(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
-  return `${DIA_CORTO[dt.getDay()]} ${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
+  const month = dt.toLocaleDateString("es-AR", { month: "long" });
+  return `${DIA_LARGO[dt.getDay()]} ${d} de ${month}`;
 }
 
 function scoreLine(m: Match): string {
@@ -30,7 +39,21 @@ function scoreLine(m: Match): string {
   return sets.filter(([a, b]) => a != null && b != null).map(([a, b]) => `${a}-${b}`).join(" ");
 }
 
-function MatchRow({
+/** Un jugador por renglón -- separa "Beta Sosa/ Andrea Garcia" en sus dos nombres. */
+function splitPlayers(teamName: string): string[] {
+  return teamName.split("/").map((p) => p.trim()).filter(Boolean);
+}
+
+/** Rosa para categorías de damas, celeste para caballeros -- gris para cualquier otro caso. */
+function categoryColor(name?: string): string {
+  if (!name) return "#96A2BC";
+  const n = name.toLowerCase();
+  if (n.includes("dama")) return "#FF96B9";
+  if (n.includes("caballero")) return "#78A8FF";
+  return "#96A2BC";
+}
+
+function MatchCell({
   match, category, team1, team2, courts, editable, onSaveResult, onCourtChange, onScheduleChange, onCancelTurn,
 }: {
   match: Match;
@@ -52,6 +75,7 @@ function MatchRow({
   });
   const winner = matchWinner(match);
   const score = scoreLine(match);
+  const catColor = categoryColor(category);
 
   function setField(field: keyof SetsDraft, raw: string) {
     setSets((s) => ({ ...s, [field]: raw === "" ? null : Number(raw) }));
@@ -63,23 +87,26 @@ function MatchRow({
   }
 
   return (
-    <div className="relative py-2 text-center">
-      <span className="text-[15px] font-extrabold leading-none text-emerald-300">
-        {timeLabel(match.scheduled_at as string)}
-      </span>
-      {category && <p className="mt-1 break-words text-[9.5px] font-medium uppercase tracking-wide text-white/50">{category}</p>}
-      <p className={`mt-0.5 break-words text-[14px] leading-tight ${winner === 1 ? "font-bold text-emerald-300" : "font-semibold text-white"}`}>
-        {team1}
-      </p>
-      <p className={`break-words text-[14px] leading-tight ${winner === 2 ? "font-bold text-emerald-300" : "font-semibold text-white"}`}>
-        <span className="font-normal text-white/40">vs </span>{team2}
-      </p>
-      {score && <p className="mt-0.5 font-mono text-[10px] text-white/55">{score}</p>}
+    <div className="relative min-h-[128px] py-3 pl-[13px] pr-2">
+      {category && (
+        <p className="flex items-center gap-1.5 text-[8.5px] font-bold uppercase tracking-[1.1px]" style={{ color: catColor }}>
+          <span className="inline-block h-[4.5px] w-[4.5px] shrink-0 rounded-full" style={{ backgroundColor: catColor }} />
+          {category}
+        </p>
+      )}
+      <div className={`mt-1 leading-[17px] ${winner === 1 ? "font-bold" : "font-semibold"} text-white`}>
+        {splitPlayers(team1).map((p, i) => <p key={i} className="text-[14px]">{p}</p>)}
+      </div>
+      <p className="text-[8px] font-medium" style={{ color: "#96A2BC" }}>vs</p>
+      <div className={`leading-[17px] ${winner === 2 ? "font-bold" : "font-semibold"} text-white`}>
+        {splitPlayers(team2).map((p, i) => <p key={i} className="text-[14px]">{p}</p>)}
+      </div>
+      {score && <p className="mt-0.5 text-[9px] font-medium" style={{ color: "#96A2BC" }}>{score}</p>}
       {editable && (
         <button
           data-html2canvas-ignore="true"
           onClick={() => setEditing((e) => !e)}
-          className="absolute right-0 top-1.5 shrink-0 rounded-md p-1 text-white/40 hover:bg-white/10 hover:text-emerald-300"
+          className="absolute right-1 top-1 shrink-0 rounded-md p-1 text-white/40 hover:bg-white/10 hover:text-white"
           aria-label={`Cargar resultado ${team1} vs ${team2}`}
         >
           <Pencil className="h-3.5 w-3.5" />
@@ -139,10 +166,11 @@ function MatchRow({
 }
 
 /**
- * Grilla vertical de un día (formato historia de Instagram), agrupada por cancha — sirve
- * tanto para ver/cargar resultados (`editable`) como para descargar y compartir. Los
- * controles de carga de resultado llevan `data-html2canvas-ignore` para no aparecer nunca
- * en la imagen exportada, aunque estén dentro del mismo cartel.
+ * "Orden de juego" de un día (formato Historia de Instagram, 1080x1920) -- una fila por
+ * horario, una columna por cancha, estilo planilla de circuito profesional. Sirve tanto
+ * para ver/cargar resultados (`editable`) como para descargar y compartir. Los controles de
+ * carga de resultado llevan `data-html2canvas-ignore` para no aparecer nunca en la imagen
+ * exportada, aunque estén dentro del mismo cartel.
  */
 export function DailyFixtureStory({
   tournamentName,
@@ -176,20 +204,23 @@ export function DailyFixtureStory({
   const { headerRef, contentRef, footerRef, download, downloading } = useStoryDownload(fileName, {
     width: 1080,
     height: 1920,
-    fallbackColor: "#0b1730",
-    backgroundImageUrl: fixtureBackground,
+    fallbackColor: "#0a1330",
+    backgroundImageUrl: ordenDeJuegoBackground,
   });
+  const { outerRef, innerRef, scale, height } = useDesignScale(DESIGN_WIDTH);
 
-  const dayMatches = matches
-    .filter((m) => m.scheduled_at && localDateStr(m.scheduled_at) === date)
-    .sort((a, b) => (a.scheduled_at! < b.scheduled_at! ? -1 : 1));
+  const dayMatches = matches.filter((m) => m.scheduled_at && localDateStr(m.scheduled_at) === date);
   if (dayMatches.length === 0) {
     return <p className="text-sm text-zinc-500">No hay partidos agendados este día todavía.</p>;
   }
 
-  const byCourt = courts
-    .map((c) => ({ court: c, matches: dayMatches.filter((m) => m.court_id === c.id) }))
-    .filter((g) => g.matches.length > 0);
+  // Una fila por horario (la unión de todos los horarios que juega cualquier cancha ese
+  // día), una columna por cancha -- así se arma la grilla de "orden de juego" en vez de
+  // listar los partidos de una cancha y después los de la otra.
+  const times = [...new Set(dayMatches.map((m) => m.scheduled_at as string))].sort();
+  const byCourtAndTime = new Map(dayMatches.map((m) => [`${m.court_id}|${m.scheduled_at}`, m]));
+
+  const gridTemplateColumns = `${HORA_COL_WIDTH}px repeat(${courts.length}, 1fr)`;
 
   return (
     <div className="flex flex-col gap-3">
@@ -202,58 +233,97 @@ export function DailyFixtureStory({
         </div>
       )}
 
-      <div className="mx-auto w-full max-w-[480px]">
+      <div ref={outerRef} className="mx-auto w-full max-w-[480px]" style={{ height }}>
         <div
-          className="overflow-hidden rounded-2xl border border-white/10 bg-[#0b1730] bg-top bg-no-repeat shadow-[0_8px_30px_rgba(0,0,0,0.35)]"
-          style={{ backgroundImage: `url(${fixtureBackground})`, backgroundSize: "100% auto" }}
+          ref={innerRef}
+          style={{ width: DESIGN_WIDTH, transform: `scale(${scale})`, transformOrigin: "top left", fontFamily: "'Manrope', sans-serif" }}
         >
-          {/* padding-top en % (no px fijo): así el texto siempre cae debajo del logo del
-              fondo sea cual sea el ancho real de la tarjeta -- las % de padding-top se
-              calculan sobre el ancho del contenedor, igual que el alto de la imagen de
-              fondo (bg-size: 100% auto), así los dos escalan siempre juntos. */}
-          <div ref={headerRef} className="flex flex-col items-center px-7 pb-3 pt-[35%]">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-400">
-              Partidos
-            </p>
-            <p className="mt-1 text-[11px] font-medium tracking-wide text-emerald-100/70">{dayLabel(date)}</p>
-            <div className="mt-2 h-px w-14 bg-emerald-500/50" />
+        <div
+          className="overflow-hidden rounded-2xl border border-white/10 bg-[#0a1330] bg-top bg-no-repeat shadow-[0_8px_30px_rgba(0,0,0,0.35)]"
+          style={{ backgroundImage: `url(${ordenDeJuegoBackground})`, backgroundSize: "100% auto" }}
+        >
+          <div ref={headerRef} className="flex flex-col items-center px-7 pb-3 pt-[158px]">
+            <div className="flex items-center gap-[21px]">
+              <span className="h-px w-[21px] bg-white/35" />
+              <p className="text-[9px] font-bold uppercase text-white/72" style={{ letterSpacing: "2.7px" }}>
+                Orden de juego
+              </p>
+              <span className="h-px w-[21px] bg-white/35" />
+            </div>
+            <p className="mt-[18px] text-[23px] font-semibold text-white">{fullDayLabel(date)}</p>
           </div>
 
-          <div
-            ref={contentRef}
-            className="flex flex-col gap-2 bg-gradient-to-b from-black/0 via-black/40 to-black/55 px-7 pb-4 pt-2 [text-shadow:0_1px_4px_rgba(0,0,0,0.7)]"
-          >
-            {byCourt.map(({ court, matches: cm }) => (
-              <div key={court.id} className="flex flex-col gap-0.5">
-                <div className="flex items-center justify-center gap-2.5">
-                  <div className="h-px w-8 bg-white/25" />
-                  <p className="shrink-0 text-[12px] font-bold uppercase tracking-wider text-emerald-300">{court.name}</p>
-                  <div className="h-px w-8 bg-white/25" />
-                </div>
-                <div className="flex flex-col divide-y divide-white/10">
-                  {cm.map((m) => (
-                    <MatchRow
-                      key={m.id}
-                      match={m}
-                      category={categoriesById[m.category_id]?.name}
-                      team1={teamsById[m.team1_id ?? ""]?.name ?? "?"}
-                      team2={teamsById[m.team2_id ?? ""]?.name ?? "?"}
-                      courts={courts}
-                      editable={editable}
-                      onSaveResult={onSaveResult}
-                      onCourtChange={onCourtChange}
-                      onScheduleChange={onScheduleChange}
-                      onCancelTurn={onCancelTurn}
-                    />
-                  ))}
-                </div>
+          <div ref={contentRef} className="px-5 pb-5 pt-9">
+            <div
+              className="overflow-hidden rounded-xl border border-white/[0.16]"
+              style={{
+                background: "rgba(10,18,40,0.6)",
+                backdropFilter: "blur(12px)",
+                boxShadow: "0 13px 36px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.28)",
+              }}
+            >
+              <div className="grid items-center border-b border-white/[0.18]" style={{ gridTemplateColumns, height: 31 }}>
+                <p className="text-center text-[7.5px] font-bold uppercase text-white/50" style={{ letterSpacing: "2.2px" }}>
+                  Hora
+                </p>
+                {courts.map((c) => (
+                  <div key={c.id} className="pl-[13px]">
+                    <p className="text-[8.5px] font-bold uppercase text-white" style={{ letterSpacing: "2.2px" }}>
+                      {c.name}
+                    </p>
+                    <div className="mt-1 h-[1px] w-[15px]" style={{ backgroundColor: "#6EA0FF" }} />
+                  </div>
+                ))}
               </div>
-            ))}
+
+              {times.map((iso, i) => (
+                <div key={iso}>
+                  <div className="relative grid" style={{ gridTemplateColumns }}>
+                    <div className="flex items-center justify-center">
+                      <span className="text-[19px] font-bold" style={{ color: "#8AB6FF" }}>{timeLabel(iso)}</span>
+                    </div>
+                    {courts.map((court) => {
+                      const match = byCourtAndTime.get(`${court.id}|${iso}`);
+                      return (
+                        <div key={court.id} className="relative flex items-center">
+                          {/* línea vertical entre HORA y cada cancha (y entre canchas), con margen arriba/abajo */}
+                          <span className="absolute left-0 top-[13px] bottom-[13px] w-px bg-white/[0.12]" />
+                          {match ? (
+                            <MatchCell
+                              match={match}
+                              category={categoriesById[match.category_id]?.name}
+                              team1={teamsById[match.team1_id ?? ""]?.name ?? "?"}
+                              team2={teamsById[match.team2_id ?? ""]?.name ?? "?"}
+                              courts={courts}
+                              editable={editable}
+                              onSaveResult={onSaveResult}
+                              onCourtChange={onCourtChange}
+                              onScheduleChange={onScheduleChange}
+                              onCancelTurn={onCancelTurn}
+                            />
+                          ) : (
+                            <p className="pl-[13px] text-[10px] font-medium" style={{ color: "#96A2BC" }}>Libre</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {i < times.length - 1 && <div className="mx-[12px] h-px bg-white/[0.13]" />}
+                </div>
+              ))}
+            </div>
           </div>
 
-          <div ref={footerRef} className="pb-3 text-center">
-            <p className="text-[9px] font-medium uppercase tracking-[0.2em] text-emerald-100/30">{tournamentName}</p>
+          <div ref={footerRef} className="pb-5 text-center">
+            <div className="flex items-center justify-center gap-[13px]">
+              <span className="h-px w-[29px] bg-white/27" />
+              <p className="text-[7.5px] font-bold uppercase text-white/60" style={{ letterSpacing: "3.1px" }}>
+                {tournamentName}
+              </p>
+              <span className="h-px w-[29px] bg-white/27" />
+            </div>
           </div>
+        </div>
         </div>
       </div>
     </div>
