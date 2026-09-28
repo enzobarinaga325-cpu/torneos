@@ -63,16 +63,16 @@ function MatchRow({
   }
 
   return (
-    <div className="relative py-1.5 text-center">
-      <span className="text-[13px] font-extrabold leading-none text-emerald-300">
+    <div className="relative py-2 text-center">
+      <span className="text-[15px] font-extrabold leading-none text-emerald-300">
         {timeLabel(match.scheduled_at as string)}
       </span>
-      {category && <p className="mt-0.5 break-words text-[9px] font-medium uppercase tracking-wide text-white/45">{category}</p>}
-      <p className={`mt-0.5 break-words text-[12.5px] leading-tight ${winner === 1 ? "font-bold text-emerald-300" : "font-semibold text-white"}`}>
+      {category && <p className="mt-1 break-words text-[9.5px] font-medium uppercase tracking-wide text-white/50">{category}</p>}
+      <p className={`mt-0.5 break-words text-[14px] leading-tight ${winner === 1 ? "font-bold text-emerald-300" : "font-semibold text-white"}`}>
         {team1}
       </p>
-      <p className={`break-words text-[12.5px] leading-tight ${winner === 2 ? "font-bold text-emerald-300" : "font-semibold text-white"}`}>
-        <span className="font-normal text-white/35">vs </span>{team2}
+      <p className={`break-words text-[14px] leading-tight ${winner === 2 ? "font-bold text-emerald-300" : "font-semibold text-white"}`}>
+        <span className="font-normal text-white/40">vs </span>{team2}
       </p>
       {score && <p className="mt-0.5 font-mono text-[10px] text-white/55">{score}</p>}
       {editable && (
@@ -219,12 +219,15 @@ export function DailyFixtureStory({
             <div className="mt-2 h-px w-14 bg-emerald-500/50" />
           </div>
 
-          <div ref={contentRef} className="flex flex-col gap-2 px-7 pb-4 [text-shadow:0_1px_4px_rgba(0,0,0,0.65)]">
+          <div
+            ref={contentRef}
+            className="flex flex-col gap-2 bg-gradient-to-b from-black/0 via-black/40 to-black/55 px-7 pb-4 pt-2 [text-shadow:0_1px_4px_rgba(0,0,0,0.7)]"
+          >
             {byCourt.map(({ court, matches: cm }) => (
               <div key={court.id} className="flex flex-col gap-0.5">
                 <div className="flex items-center justify-center gap-2.5">
                   <div className="h-px w-8 bg-white/25" />
-                  <p className="shrink-0 text-[11px] font-bold uppercase tracking-wider text-emerald-300">{court.name}</p>
+                  <p className="shrink-0 text-[12px] font-bold uppercase tracking-wider text-emerald-300">{court.name}</p>
                   <div className="h-px w-8 bg-white/25" />
                 </div>
                 <div className="flex flex-col divide-y divide-white/10">
