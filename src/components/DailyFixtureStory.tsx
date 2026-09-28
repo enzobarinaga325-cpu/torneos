@@ -67,20 +67,20 @@ function MatchRow({
           {timeLabel(match.scheduled_at as string)}
         </span>
         <div className="min-w-0 flex-1">
-          {category && <p className="truncate text-[9px] uppercase tracking-wide text-zinc-400">{category}</p>}
-          <p className={`truncate text-[11.5px] leading-tight ${winner === 1 ? "font-bold text-emerald-700" : "font-medium text-zinc-800"}`}>
+          {category && <p className="truncate text-[9px] uppercase tracking-wide text-white/45">{category}</p>}
+          <p className={`truncate text-[11.5px] leading-tight ${winner === 1 ? "font-bold text-emerald-300" : "font-medium text-white"}`}>
             {team1}
           </p>
-          <p className={`truncate text-[11.5px] leading-tight ${winner === 2 ? "font-bold text-emerald-700" : "font-medium text-zinc-800"}`}>
-            <span className="font-normal text-zinc-300">vs </span>{team2}
+          <p className={`truncate text-[11.5px] leading-tight ${winner === 2 ? "font-bold text-emerald-300" : "font-medium text-white"}`}>
+            <span className="font-normal text-white/35">vs </span>{team2}
           </p>
-          {score && <p className="font-mono text-[10px] text-zinc-500">{score}</p>}
+          {score && <p className="font-mono text-[10px] text-white/55">{score}</p>}
         </div>
         {editable && (
           <button
             data-html2canvas-ignore="true"
             onClick={() => setEditing((e) => !e)}
-            className="shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-emerald-700"
+            className="shrink-0 rounded-md p-1 text-white/40 hover:bg-white/10 hover:text-emerald-300"
             aria-label={`Cargar resultado ${team1} vs ${team2}`}
           >
             <Pencil className="h-3.5 w-3.5" />
@@ -213,36 +213,32 @@ export function DailyFixtureStory({
             <div className="mt-2 h-px w-14 bg-emerald-500/50" />
           </div>
 
-          <div className="flex flex-col gap-2 px-5 pb-4">
-            <div className="overflow-hidden rounded-2xl bg-white shadow-[0_4px_20px_rgba(0,0,0,0.25)]">
-              <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 px-3.5 py-1.5">
-                <p className="text-xs font-bold uppercase tracking-wide text-white">{dayLabel(date)}</p>
+          <div className="flex flex-col gap-4 px-6 pb-5 [text-shadow:0_1px_4px_rgba(0,0,0,0.6)]">
+            {byCourt.map(({ court, matches: cm }) => (
+              <div key={court.id} className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2">
+                  <p className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-emerald-300">{court.name}</p>
+                  <div className="h-px flex-1 bg-white/15" />
+                </div>
+                <div className="flex flex-col divide-y divide-white/10">
+                  {cm.map((m) => (
+                    <MatchRow
+                      key={m.id}
+                      match={m}
+                      category={categoriesById[m.category_id]?.name}
+                      team1={teamsById[m.team1_id ?? ""]?.name ?? "?"}
+                      team2={teamsById[m.team2_id ?? ""]?.name ?? "?"}
+                      courts={courts}
+                      editable={editable}
+                      onSaveResult={onSaveResult}
+                      onCourtChange={onCourtChange}
+                      onScheduleChange={onScheduleChange}
+                      onCancelTurn={onCancelTurn}
+                    />
+                  ))}
+                </div>
               </div>
-              <div className="flex flex-col divide-y divide-zinc-100 px-3.5 py-2">
-                {byCourt.map(({ court, matches: cm }) => (
-                  <div key={court.id} className="py-1.5 first:pt-0 last:pb-0">
-                    <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">{court.name}</p>
-                    <div className="flex flex-col gap-1">
-                      {cm.map((m) => (
-                        <MatchRow
-                          key={m.id}
-                          match={m}
-                          category={categoriesById[m.category_id]?.name}
-                          team1={teamsById[m.team1_id ?? ""]?.name ?? "?"}
-                          team2={teamsById[m.team2_id ?? ""]?.name ?? "?"}
-                          courts={courts}
-                          editable={editable}
-                          onSaveResult={onSaveResult}
-                          onCourtChange={onCourtChange}
-                          onScheduleChange={onScheduleChange}
-                          onCancelTurn={onCancelTurn}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            ))}
           </div>
 
           <div className="pb-3 text-center">
