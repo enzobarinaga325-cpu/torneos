@@ -12,7 +12,9 @@ const DIA_CORTO = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Vierne
 type SetsDraft = Pick<Match, "set1_team1" | "set1_team2" | "set2_team1" | "set2_team2" | "set3_team1" | "set3_team2">;
 
 function timeLabel(iso: string): string {
-  return new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+  // Formato 24hs (ej. "19:00") en vez de "07:00 p. m." -- ese sufijo obligaba a partir el
+  // horario en dos líneas dentro de una columna angosta, que quedaba apretado y feo.
+  return new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 function dayLabel(dateStr: string): string {
@@ -61,20 +63,22 @@ function MatchRow({
   }
 
   return (
-    <div className="py-1">
-      <div className="flex items-center gap-2">
-        <span className="w-11 shrink-0 rounded-md bg-emerald-50 py-0.5 text-center font-mono text-[10px] font-semibold text-emerald-800">
-          {timeLabel(match.scheduled_at as string)}
-        </span>
+    <div className="py-2.5">
+      <div className="flex items-start gap-3">
+        <div className="flex w-11 shrink-0 flex-col items-center pt-0.5">
+          <span className="text-[14px] font-extrabold leading-none text-emerald-300">
+            {timeLabel(match.scheduled_at as string)}
+          </span>
+        </div>
         <div className="min-w-0 flex-1">
-          {category && <p className="truncate text-[9px] uppercase tracking-wide text-white/45">{category}</p>}
-          <p className={`truncate text-[11.5px] leading-tight ${winner === 1 ? "font-bold text-emerald-300" : "font-medium text-white"}`}>
+          {category && <p className="break-words text-[9px] font-medium uppercase tracking-wide text-white/45">{category}</p>}
+          <p className={`break-words text-[12.5px] leading-snug ${winner === 1 ? "font-bold text-emerald-300" : "font-semibold text-white"}`}>
             {team1}
           </p>
-          <p className={`truncate text-[11.5px] leading-tight ${winner === 2 ? "font-bold text-emerald-300" : "font-medium text-white"}`}>
-            <span className="font-normal text-white/35">vs </span>{team2}
+          <p className={`break-words text-[12.5px] leading-snug ${winner === 2 ? "font-bold text-emerald-300" : "font-semibold text-white"}`}>
+            <span className="font-normal text-white/40">vs </span>{team2}
           </p>
-          {score && <p className="font-mono text-[10px] text-white/55">{score}</p>}
+          {score && <p className="mt-0.5 font-mono text-[10px] text-white/55">{score}</p>}
         </div>
         {editable && (
           <button
@@ -199,10 +203,10 @@ export function DailyFixtureStory({
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-zinc-200">
+      <div className="mx-auto w-full max-w-[480px]">
         <div
           ref={ref}
-          className="mx-auto w-full max-w-[480px] bg-[#0b1730] bg-top bg-no-repeat"
+          className="overflow-hidden rounded-2xl border border-white/10 bg-[#0b1730] bg-top bg-no-repeat shadow-[0_8px_30px_rgba(0,0,0,0.35)]"
           style={{ backgroundImage: `url(${fixtureBackground})`, backgroundSize: "100% auto" }}
         >
           <div className="flex flex-col items-center px-7 pb-3 pt-[188px]">
@@ -213,14 +217,14 @@ export function DailyFixtureStory({
             <div className="mt-2 h-px w-14 bg-emerald-500/50" />
           </div>
 
-          <div className="flex flex-col gap-4 px-6 pb-5 [text-shadow:0_1px_4px_rgba(0,0,0,0.6)]">
+          <div className="flex flex-col gap-3 px-4 pb-5">
             {byCourt.map(({ court, matches: cm }) => (
-              <div key={court.id} className="flex flex-col gap-1.5">
-                <div className="flex items-center gap-2">
-                  <p className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-emerald-300">{court.name}</p>
-                  <div className="h-px flex-1 bg-white/15" />
+              <div key={court.id} className="overflow-hidden rounded-xl border border-white/15 bg-slate-950/55 backdrop-blur-sm">
+                <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2">
+                  <span className="h-3.5 w-1 shrink-0 rounded-full bg-emerald-400" />
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-white">{court.name}</p>
                 </div>
-                <div className="flex flex-col divide-y divide-white/10">
+                <div className="flex flex-col divide-y divide-white/10 px-4">
                   {cm.map((m) => (
                     <MatchRow
                       key={m.id}
