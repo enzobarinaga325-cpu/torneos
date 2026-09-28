@@ -32,41 +32,42 @@ export function LeagueStandings({
           </Button>
         </div>
       )}
-      <div ref={ref} className="overflow-x-auto rounded-xl border border-zinc-200 bg-white p-4">
-        <table className="w-full text-xs">
+      {/* Antes eran 9 columnas separadas (sets/games a favor y en contra cada uno por su
+          lado) -- obligaba a hacer scroll de costado en el celular para ver "Puntos". Se
+          combinan favor/contra en una sola columna ("12-4") para que entre todo en pantalla
+          sin perder ningún dato. `overflow-x-auto` queda como red de seguridad para nombres
+          de equipo muy largos, pero ya no debería hacer falta en la mayoría de los casos. */}
+      <div ref={ref} className="overflow-x-auto rounded-xl border border-zinc-200 bg-white p-3 sm:p-4">
+        <table className="w-full text-[11px] sm:text-xs">
           <thead className="text-left text-zinc-400">
             <tr>
-              <th className="py-1 pr-2">Equipo</th>
-              <th className="px-2 text-center">PJ</th>
-              <th className="px-2 text-center">PG</th>
-              <th className="px-2 text-center">PP</th>
-              <th className="px-2 text-center">Sets a favor</th>
-              <th className="px-2 text-center">Sets en contra</th>
-              <th className="px-2 text-center">Games a favor</th>
-              <th className="px-2 text-center">Games en contra</th>
-              <th className="px-2 text-center font-semibold text-zinc-600">Puntos</th>
+              <th className="py-1 pr-1.5">Equipo</th>
+              <th className="px-1 text-center">PJ</th>
+              <th className="px-1 text-center">PG</th>
+              <th className="px-1 text-center">PP</th>
+              <th className="px-1 text-center">Sets</th>
+              <th className="px-1 text-center">Games</th>
+              <th className="px-1 text-center font-semibold text-zinc-600">Pts</th>
             </tr>
           </thead>
           <tbody>
             {standings.map((s, i) => (
               <tr key={s.team_id} className="border-t border-zinc-100">
-                <td className="py-1.5 pr-2 font-medium">
-                  {i === 0 && <Trophy className="mr-1 inline h-3 w-3 text-amber-500" />}
+                <td className="max-w-[34vw] truncate py-1.5 pr-1.5 font-medium sm:max-w-none" title={teamsById[s.team_id]?.name}>
+                  {i === 0 && <Trophy className="mr-1 inline h-3 w-3 shrink-0 text-amber-500" />}
                   {teamsById[s.team_id]?.name ?? "?"}
                 </td>
-                <td className="px-2 text-center">{s.played}</td>
-                <td className="px-2 text-center">{s.won}</td>
-                <td className="px-2 text-center">{s.lost}</td>
-                <td className="px-2 text-center">{s.sets_won}</td>
-                <td className="px-2 text-center">{s.sets_lost}</td>
-                <td className="px-2 text-center">{s.games_won}</td>
-                <td className="px-2 text-center">{s.games_lost}</td>
-                <td className="px-2 text-center font-semibold text-emerald-700">{s.won * 2}</td>
+                <td className="px-1 text-center">{s.played}</td>
+                <td className="px-1 text-center">{s.won}</td>
+                <td className="px-1 text-center">{s.lost}</td>
+                <td className="whitespace-nowrap px-1 text-center">{s.sets_won}-{s.sets_lost}</td>
+                <td className="whitespace-nowrap px-1 text-center">{s.games_won}-{s.games_lost}</td>
+                <td className="px-1 text-center font-semibold text-emerald-700">{s.won * 2}</td>
               </tr>
             ))}
             {standings.length === 0 && (
               <tr>
-                <td colSpan={9} className="py-3 text-center text-zinc-400">Todavía no hay equipos.</td>
+                <td colSpan={7} className="py-3 text-center text-zinc-400">Todavía no hay equipos.</td>
               </tr>
             )}
           </tbody>

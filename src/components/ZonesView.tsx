@@ -48,8 +48,8 @@ export function ZonesView({
                   <tbody>
                     {standings.map((s, i) => (
                       <tr key={s.team_id} className="border-t border-zinc-100">
-                        <td className="py-1.5 pr-2 font-medium">
-                          {i === 0 && <Trophy className="mr-1 inline h-3 w-3 text-amber-500" />}
+                        <td className="max-w-[36vw] truncate py-1.5 pr-2 font-medium sm:max-w-none" title={teamsById[s.team_id]?.name}>
+                          {i === 0 && <Trophy className="mr-1 inline h-3 w-3 shrink-0 text-amber-500" />}
                           {teamsById[s.team_id]?.name ?? "?"}
                         </td>
                         <td className="px-2 text-center">{s.played}</td>
