@@ -54,7 +54,7 @@ function categoryColor(name?: string): string {
 }
 
 function MatchCell({
-  match, category, team1, team2, courts, editable, onSaveResult, onCourtChange, onScheduleChange, onCancelTurn,
+  match, category, team1, team2, courts, editable, onSaveResult, onSlotChange, onCancelTurn,
 }: {
   match: Match;
   category?: string;
@@ -63,8 +63,7 @@ function MatchCell({
   courts: Court[];
   editable?: boolean;
   onSaveResult?: (m: Match, sets: SetsDraft) => void;
-  onCourtChange?: (m: Match, courtId: string) => void;
-  onScheduleChange?: (m: Match, iso: string) => void;
+  onSlotChange?: (m: Match, patch: { courtId: string | null; iso: string | null }) => void;
   onCancelTurn?: (m: Match) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -73,9 +72,21 @@ function MatchCell({
     set2_team1: match.set2_team1, set2_team2: match.set2_team2,
     set3_team1: match.set3_team1, set3_team2: match.set3_team2,
   });
+  // Cancha y horario NO se guardan solos al tocarlos -- si cambiar la cancha guardara al
+  // toque, se intercambiaba de inmediato con el partido que ya estuviera en esa cancha a la
+  // hora VIEJA (todavía sin actualizar), antes de llegar a elegir la hora nueva. Se juntan
+  // los dos cambios acá y se mandan juntos recién al tocar "Confirmar cambio".
+  const [draftCourtId, setDraftCourtId] = useState(match.court_id ?? "");
+  const [draftDatetime, setDraftDatetime] = useState(match.scheduled_at ? toLocalDatetimeInput(match.scheduled_at) : "");
   const winner = matchWinner(match);
   const score = scoreLine(match);
   const catColor = categoryColor(category);
+
+  function openEditing() {
+    setDraftCourtId(match.court_id ?? "");
+    setDraftDatetime(match.scheduled_at ? toLocalDatetimeInput(match.scheduled_at) : "");
+    setEditing(true);
+  }
 
   function setField(field: keyof SetsDraft, raw: string) {
     setSets((s) => ({ ...s, [field]: raw === "" ? null : Number(raw) }));
@@ -83,6 +94,11 @@ function MatchCell({
 
   function save() {
     onSaveResult?.(match, sets);
+    setEditing(false);
+  }
+
+  function confirmSlotChange() {
+    onSlotChange?.(match, { courtId: draftCourtId || null, iso: draftDatetime ? new Date(draftDatetime).toISOString() : null });
     setEditing(false);
   }
 
@@ -105,7 +121,7 @@ function MatchCell({
       {editable && (
         <button
           data-html2canvas-ignore="true"
-          onClick={() => setEditing((e) => !e)}
+          onClick={() => (editing ? setEditing(false) : openEditing())}
           className="absolute right-1 top-1 shrink-0 rounded-md p-1 text-white/40 hover:bg-white/10 hover:text-white"
           aria-label={`Cargar resultado ${team1} vs ${team2}`}
         >
@@ -117,20 +133,22 @@ function MatchCell({
         <div data-html2canvas-ignore="true" className="mt-1.5 flex flex-col gap-2 rounded-lg bg-zinc-50 p-2">
           <div className="flex flex-wrap items-center gap-1.5">
             <Select
-              value={match.court_id ?? ""}
-              onChange={(e) => onCourtChange?.(match, e.target.value)}
+              value={draftCourtId}
+              onChange={(e) => setDraftCourtId(e.target.value)}
               className="w-24 shrink-0 py-1 text-xs"
             >
               <option value="">Cancha</option>
               {courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
             <input
-              key={match.scheduled_at ?? "sin-horario"}
               type="datetime-local"
-              defaultValue={match.scheduled_at ? toLocalDatetimeInput(match.scheduled_at) : ""}
-              onBlur={(e) => onScheduleChange?.(match, e.target.value ? new Date(e.target.value).toISOString() : "")}
+              value={draftDatetime}
+              onChange={(e) => setDraftDatetime(e.target.value)}
               className="min-w-0 flex-1 rounded-lg border border-zinc-300 px-2 py-1 text-xs outline-none focus:border-emerald-500"
             />
+            <Button variant="secondary" className="shrink-0 px-2 py-1 text-xs" onClick={confirmSlotChange}>
+              Confirmar cambio
+            </Button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {(["set1", "set2", "set3"] as const).map((s) => (
@@ -182,8 +200,7 @@ export function DailyFixtureStory({
   fileName,
   editable = false,
   onSaveResult,
-  onCourtChange,
-  onScheduleChange,
+  onSlotChange,
   onCancelTurn,
   showDownload = true,
 }: {
@@ -196,8 +213,7 @@ export function DailyFixtureStory({
   fileName: string;
   editable?: boolean;
   onSaveResult?: (m: Match, sets: SetsDraft) => void;
-  onCourtChange?: (m: Match, courtId: string) => void;
-  onScheduleChange?: (m: Match, iso: string) => void;
+  onSlotChange?: (m: Match, patch: { courtId: string | null; iso: string | null }) => void;
   onCancelTurn?: (m: Match) => void;
   showDownload?: boolean;
 }) {
@@ -297,8 +313,7 @@ export function DailyFixtureStory({
                               courts={courts}
                               editable={editable}
                               onSaveResult={onSaveResult}
-                              onCourtChange={onCourtChange}
-                              onScheduleChange={onScheduleChange}
+                              onSlotChange={onSlotChange}
                               onCancelTurn={onCancelTurn}
                             />
                           ) : (

@@ -39,6 +39,54 @@ function enumerateDates(start: string, end: string): string[] {
   return dates;
 }
 
+/**
+ * Una fila de "Partidos sin agendar": cancha y horario se juntan en estado local y recién
+ * se mandan juntos al tocar "Confirmar", en vez de guardar cada campo solo apenas se toca
+ * (eso no daba tiempo a cargar los dos datos antes de que el primero ya disparara un
+ * guardado parcial).
+ */
+function UnscheduledMatchRow({
+  match, courts, categoryName, team1Name, team2Name, onConfirm,
+}: {
+  match: Match;
+  courts: Court[];
+  categoryName: string;
+  team1Name: string;
+  team2Name: string;
+  onConfirm: (match: Match, patch: { court_id: string | null; scheduled_at: string | null }) => void;
+}) {
+  const [courtId, setCourtId] = useState(match.court_id ?? "");
+  const [datetime, setDatetime] = useState(match.scheduled_at ? toLocalDatetimeInput(match.scheduled_at) : "");
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg bg-zinc-50 px-3 py-2 text-sm">
+      <span className="shrink-0 rounded-full bg-zinc-200 px-2 py-0.5 text-xs font-medium text-zinc-600">{categoryName}</span>
+      <span className="min-w-[180px] flex-1">
+        {team1Name}
+        <span className="mx-1.5 text-xs text-zinc-400">vs</span>
+        {team2Name}
+      </span>
+      <Select value={courtId} onChange={(e) => setCourtId(e.target.value)} className="w-28 shrink-0">
+        <option value="">Cancha</option>
+        {courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </Select>
+      <input
+        type="datetime-local"
+        value={datetime}
+        onChange={(e) => setDatetime(e.target.value)}
+        className="w-[172px] shrink-0 rounded-lg border border-zinc-300 px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
+      />
+      <Button
+        variant="secondary"
+        className="shrink-0 px-2 py-1.5 text-xs"
+        onClick={() => onConfirm(match, { court_id: courtId || null, scheduled_at: datetime ? new Date(datetime).toISOString() : null })}
+      >
+        Confirmar
+      </Button>
+    </div>
+  );
+}
+
 export function TournamentManage() {
   const { id } = useParams<{ id: string }>();
   const [tournament, setTournament] = useState<Tournament | null | undefined>(undefined);
@@ -468,14 +516,6 @@ export function TournamentManage() {
     load();
   }
 
-  async function updateMatchCourt(match: Match, courtId: string) {
-    await updateMatchSlot(match, { court_id: courtId || null });
-  }
-
-  async function updateMatchSchedule(match: Match, isoDatetime: string) {
-    await updateMatchSlot(match, { scheduled_at: isoDatetime || null });
-  }
-
   /** Cancela TODO el día elegido en la grilla (todas las canchas) — por lluvia, por ejemplo.
    *  Los partidos que tenía agendados no se pierden: vuelven al pool y "Autocompletar
    *  horarios" los reacomoda solo en el próximo turno libre. */
@@ -882,8 +922,7 @@ export function TournamentManage() {
             fileName={`dia-${tournament.name}-${selectedGridDay}`}
             editable
             onSaveResult={saveResult}
-            onCourtChange={updateMatchCourt}
-            onScheduleChange={updateMatchSchedule}
+            onSlotChange={(match, patch) => updateMatchSlot(match, { court_id: patch.courtId, scheduled_at: patch.iso })}
             onCancelTurn={handleCancelTurn}
           />
         </Card>
@@ -897,27 +936,15 @@ export function TournamentManage() {
           </p>
           <div className="flex flex-col gap-2">
             {unscheduledMatches.map((m) => (
-              <div key={m.id} className="flex flex-wrap items-center gap-3 rounded-lg bg-zinc-50 px-3 py-2 text-sm">
-                <span className="shrink-0 rounded-full bg-zinc-200 px-2 py-0.5 text-xs font-medium text-zinc-600">
-                  {categoriesById[m.category_id]?.name ?? "?"}
-                </span>
-                <span className="flex-1 min-w-[180px]">
-                  {allTeamsById[m.team1_id ?? ""]?.name ?? "?"}
-                  <span className="mx-1.5 text-xs text-zinc-400">vs</span>
-                  {allTeamsById[m.team2_id ?? ""]?.name ?? "?"}
-                </span>
-                <Select value={m.court_id ?? ""} onChange={(e) => updateMatchCourt(m, e.target.value)} className="w-28 shrink-0">
-                  <option value="">Cancha</option>
-                  {courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </Select>
-                <input
-                  key={m.scheduled_at ?? "sin-horario"}
-                  type="datetime-local"
-                  defaultValue={m.scheduled_at ? toLocalDatetimeInput(m.scheduled_at) : ""}
-                  onBlur={(e) => updateMatchSchedule(m, e.target.value ? new Date(e.target.value).toISOString() : "")}
-                  className="w-[172px] shrink-0 rounded-lg border border-zinc-300 px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
-                />
-              </div>
+              <UnscheduledMatchRow
+                key={m.id}
+                match={m}
+                courts={courts}
+                categoryName={categoriesById[m.category_id]?.name ?? "?"}
+                team1Name={allTeamsById[m.team1_id ?? ""]?.name ?? "?"}
+                team2Name={allTeamsById[m.team2_id ?? ""]?.name ?? "?"}
+                onConfirm={updateMatchSlot}
+              />
             ))}
           </div>
         </Card>
