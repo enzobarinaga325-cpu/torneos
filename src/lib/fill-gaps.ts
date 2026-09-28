@@ -69,7 +69,15 @@ export async function fillScheduleGaps(tournamentId: string): Promise<FillGapsRe
   for (const m of committed) bySlot.set(slotKey(m.court_id as string, m.scheduled_at as string), m);
 
   const busyAt = new Map<string, Set<string>>();
-  const busyDay = new Map<string, Set<string>>();
+  // Por equipo y día, CUÁNTOS partidos committed tiene ese día (no un simple sí/no) — así, al
+  // excluir el propio partido que se está por mover, un segundo partido real de ese equipo
+  // ese mismo día (un choque genuino, aunque no debería existir bajo la regla de "uno por
+  // día", pero puede pasar si el fixture quedó inconsistente) sigue contando y bloquea.
+  const busyDay = new Map<string, Map<string, number>>();
+  function incDay(teamId: string, day: string, delta: number) {
+    const m = busyDay.get(teamId) ?? busyDay.set(teamId, new Map()).get(teamId)!;
+    m.set(day, (m.get(day) ?? 0) + delta);
+  }
   for (const m of committed) {
     const iso = m.scheduled_at as string;
     const set = busyAt.get(iso) ?? new Set<string>();
@@ -77,8 +85,8 @@ export async function fillScheduleGaps(tournamentId: string): Promise<FillGapsRe
     if (m.team2_id) set.add(m.team2_id);
     busyAt.set(iso, set);
     const day = localDayKey(iso);
-    if (m.team1_id) (busyDay.get(m.team1_id) ?? busyDay.set(m.team1_id, new Set()).get(m.team1_id)!).add(day);
-    if (m.team2_id) (busyDay.get(m.team2_id) ?? busyDay.set(m.team2_id, new Set()).get(m.team2_id)!).add(day);
+    if (m.team1_id) incDay(m.team1_id, day, 1);
+    if (m.team2_id) incDay(m.team2_id, day, 1);
   }
 
   function fitsAvailability(teamId: string | null, iso: string): boolean {
@@ -89,13 +97,17 @@ export async function fillScheduleGaps(tournamentId: string): Promise<FillGapsRe
   }
 
   // ¿Puede `teamId` pasar a `iso`, ignorando su propio compromiso actual (`excludeIso` — el
-  // turno que va a dejar libre si se lo mueve)?
+  // turno que va a dejar libre si se lo mueve)? Si ese turno cae el mismo día que `iso`, se
+  // descuenta solo LA PROPIA contribución de ese día — si igual queda otro partido real de
+  // ese equipo ese día, sigue bloqueando.
   function teamFits(teamId: string | null, iso: string, excludeIso: string | null): boolean {
     if (!teamId) return true;
     if (busyAt.get(iso)?.has(teamId)) return false;
     const day = localDayKey(iso);
     const excludeDay = excludeIso ? localDayKey(excludeIso) : null;
-    if (day !== excludeDay && busyDay.get(teamId)?.has(day)) return false;
+    const count = busyDay.get(teamId)?.get(day) ?? 0;
+    const effectiveCount = day === excludeDay ? count - 1 : count;
+    if (effectiveCount > 0) return false;
     return true;
   }
 
@@ -105,8 +117,8 @@ export async function fillScheduleGaps(tournamentId: string): Promise<FillGapsRe
     busyAt.get(iso)?.delete(m.team1_id ?? "");
     busyAt.get(iso)?.delete(m.team2_id ?? "");
     const day = localDayKey(iso);
-    if (m.team1_id) busyDay.get(m.team1_id)?.delete(day);
-    if (m.team2_id) busyDay.get(m.team2_id)?.delete(day);
+    if (m.team1_id) incDay(m.team1_id, day, -1);
+    if (m.team2_id) incDay(m.team2_id, day, -1);
   }
 
   function mark(m: LigaMatch, courtId: string, iso: string) {
@@ -118,8 +130,8 @@ export async function fillScheduleGaps(tournamentId: string): Promise<FillGapsRe
     if (m.team2_id) set.add(m.team2_id);
     busyAt.set(iso, set);
     const day = localDayKey(iso);
-    if (m.team1_id) (busyDay.get(m.team1_id) ?? busyDay.set(m.team1_id, new Set()).get(m.team1_id)!).add(day);
-    if (m.team2_id) (busyDay.get(m.team2_id) ?? busyDay.set(m.team2_id, new Set()).get(m.team2_id)!).add(day);
+    if (m.team1_id) incDay(m.team1_id, day, 1);
+    if (m.team2_id) incDay(m.team2_id, day, 1);
   }
 
   const horizon = Math.max(...committed.map((m) => new Date(m.scheduled_at as string).getTime()));
