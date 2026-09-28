@@ -6,3 +6,4 @@ dist-ssr
 *.log
 .DS_Store
 .claude/
+.wrangler/
