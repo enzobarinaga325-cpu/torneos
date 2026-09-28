@@ -73,6 +73,15 @@ export function CategoryManage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoryId]);
 
+  /** Ejecuta una escritura a Supabase y, si falla, la muestra en el cartel de error en vez
+   *  de dejar que pase desapercibida — devuelve false para que quien llama corte ahí (no
+   *  siga como si el guardado hubiese entrado). */
+  async function run(promise: PromiseLike<{ error: { message: string } | null }>): Promise<boolean> {
+    const { error: err } = await promise;
+    if (err) { setError(err.message); return false; }
+    return true;
+  }
+
   const teamsById = useMemo(() => Object.fromEntries(teams.map((t) => [t.id, t])), [teams]);
   const isLiga = tournament?.modalidad === "liga";
   const zoneMatches = matches.filter((m) => m.stage === "zona");
@@ -95,7 +104,7 @@ export function CategoryManage() {
 
   async function deleteTeam(teamId: string) {
     if (!confirm("¿Borrar este equipo? Si ya tiene partidos cargados, se van a borrar también.")) return;
-    await supabase.from("teams").delete().eq("id", teamId);
+    if (!(await run(supabase.from("teams").delete().eq("id", teamId)))) return;
     load();
   }
 
@@ -107,13 +116,13 @@ export function CategoryManage() {
   async function saveTeamName(teamId: string) {
     const name = editingTeamName.trim();
     if (!name) return;
-    await supabase.from("teams").update({ name }).eq("id", teamId);
+    if (!(await run(supabase.from("teams").update({ name }).eq("id", teamId)))) return;
     setEditingTeamId(null);
     load();
   }
 
   async function assignZone(teamId: string, zoneId: string) {
-    await supabase.from("teams").update({ zone_id: zoneId || null }).eq("id", teamId);
+    if (!(await run(supabase.from("teams").update({ zone_id: zoneId || null }).eq("id", teamId)))) return;
     load();
   }
 
@@ -145,9 +154,11 @@ export function CategoryManage() {
   }
 
   async function addAvailability(teamId: string, diasSemana: number[], horaInicio: string, horaFin: string) {
-    await supabase
+    setError(null);
+    const ok = await run(supabase
       .from("team_availability")
-      .insert(diasSemana.map((dia) => ({ team_id: teamId, dia_semana: dia, hora_inicio: horaInicio, hora_fin: horaFin })));
+      .insert(diasSemana.map((dia) => ({ team_id: teamId, dia_semana: dia, hora_inicio: horaInicio, hora_fin: horaFin }))));
+    if (!ok) return;
     await repairTeamAvailability(teamId);
     load();
   }
@@ -155,7 +166,7 @@ export function CategoryManage() {
   // Sacar una franja solo AMPLÍA lo que el equipo puede jugar — nunca invalida un partido ya
   // agendado, así que no hace falta reacomodar nada solo por sacarla.
   async function removeAvailability(availabilityId: string) {
-    await supabase.from("team_availability").delete().eq("id", availabilityId);
+    if (!(await run(supabase.from("team_availability").delete().eq("id", availabilityId)))) return;
     load();
   }
 
@@ -184,14 +195,15 @@ export function CategoryManage() {
   }
 
   async function addUnavailability(teamId: string, startDate: string, endDate: string) {
-    await supabase.from("team_unavailability").insert({ team_id: teamId, start_date: startDate, end_date: endDate });
+    setError(null);
+    if (!(await run(supabase.from("team_unavailability").insert({ team_id: teamId, start_date: startDate, end_date: endDate })))) return;
     await repairTeamUnavailability(teamId);
     load();
   }
 
   // Sacar un rango solo AMPLÍA lo que el equipo puede jugar — no hace falta reacomodar nada.
   async function removeUnavailability(id: string) {
-    await supabase.from("team_unavailability").delete().eq("id", id);
+    if (!(await run(supabase.from("team_unavailability").delete().eq("id", id)))) return;
     load();
   }
 
@@ -202,16 +214,17 @@ export function CategoryManage() {
     setBusy(true);
     setError(null);
     // Limpia zonas previas (y sus partidos de zona) antes de proponer de nuevo.
-    await supabase.from("zones").delete().eq("category_id", categoryId!);
+    if (!(await run(supabase.from("zones").delete().eq("category_id", categoryId!)))) { setBusy(false); return; }
     const proposal = proposeZones(teams.map((t) => t.id), size);
     for (let i = 0; i < proposal.length; i++) {
-      const { data: zone } = await supabase
+      const { data: zone, error: zoneError } = await supabase
         .from("zones")
         .insert({ category_id: categoryId, name: proposal[i].name, position: i })
         .select()
         .single();
+      if (zoneError) { setError(zoneError.message); setBusy(false); return; }
       if (zone) {
-        await supabase.from("teams").update({ zone_id: zone.id }).in("id", proposal[i].teamIds);
+        if (!(await run(supabase.from("teams").update({ zone_id: zone.id }).in("id", proposal[i].teamIds)))) { setBusy(false); return; }
       }
     }
     setBusy(false);
@@ -225,7 +238,7 @@ export function CategoryManage() {
     if (!confirm("¿Quitar las zonas de esta categoría? Los equipos vuelven a quedar sin zona y se borran TODOS los partidos de liga ya generados (jugados o no). Después generás de nuevo el fixture como un solo todos-contra-todos.")) return;
     setBusy(true);
     setError(null);
-    await supabase.from("zones").delete().eq("category_id", categoryId!);
+    if (!(await run(supabase.from("zones").delete().eq("category_id", categoryId!)))) { setBusy(false); return; }
     setBusy(false);
     load();
   }
@@ -235,12 +248,12 @@ export function CategoryManage() {
     if (hasZoneMatches && !confirm("Ya hay partidos de zona cargados. Esto los borra y genera de nuevo (se pierden los resultados). ¿Seguir?")) return;
     setBusy(true);
     setError(null);
-    await supabase.from("matches").delete().eq("category_id", categoryId!).eq("stage", "zona");
+    if (!(await run(supabase.from("matches").delete().eq("category_id", categoryId!).eq("stage", "zona")))) { setBusy(false); return; }
     for (const zone of zones) {
       const zoneTeamIds = teams.filter((t) => t.zone_id === zone.id).map((t) => t.id);
       const pairs = roundRobinPairs(zoneTeamIds);
       if (pairs.length === 0) continue;
-      await supabase.from("matches").insert(
+      const ok = await run(supabase.from("matches").insert(
         pairs.map(([a, b], i) => ({
           category_id: categoryId,
           stage: "zona",
@@ -249,7 +262,8 @@ export function CategoryManage() {
           team1_id: a,
           team2_id: b,
         })),
-      );
+      ));
+      if (!ok) { setBusy(false); return; }
     }
     // Los partidos de zona ya nacen con las dos parejas conocidas, así que se pueden
     // agendar de una sin esperar a que el admin apriete "Autocompletar horarios".
@@ -275,11 +289,11 @@ export function CategoryManage() {
 
     setBusy(true);
     setError(null);
-    await supabase.from("matches").delete().eq("category_id", categoryId!).eq("stage", "fixture");
+    if (!(await run(supabase.from("matches").delete().eq("category_id", categoryId!).eq("stage", "fixture")))) { setBusy(false); return; }
 
     const tempToRealId = new Map<string, string>();
     for (const m of plan) {
-      const { data } = await supabase
+      const { data, error: insertError } = await supabase
         .from("matches")
         .insert({
           category_id: categoryId,
@@ -293,6 +307,7 @@ export function CategoryManage() {
         })
         .select()
         .single();
+      if (insertError) { setError(insertError.message); setBusy(false); return; }
       if (data) tempToRealId.set(m.tempId, data.id);
     }
     for (const m of plan) {
@@ -300,7 +315,7 @@ export function CategoryManage() {
       const realId = tempToRealId.get(m.tempId);
       const nextRealId = tempToRealId.get(m.nextTempId);
       if (!realId || !nextRealId) continue;
-      await supabase.from("matches").update({ next_match_id: nextRealId, next_match_slot: m.nextSlot }).eq("id", realId);
+      if (!(await run(supabase.from("matches").update({ next_match_id: nextRealId, next_match_slot: m.nextSlot }).eq("id", realId)))) { setBusy(false); return; }
     }
     // La primera ronda ya tiene las dos parejas conocidas (vienen de las zonas): se agenda
     // de una. Las rondas siguientes se van agendando solas a medida que se cargan resultados.
@@ -329,8 +344,8 @@ export function CategoryManage() {
 
     setBusy(true);
     setError(null);
-    await supabase.from("tournaments").update({ ida_vuelta: idaVuelta }).eq("id", tournamentId!);
-    await supabase.from("matches").delete().eq("category_id", categoryId!).eq("stage", "liga");
+    if (!(await run(supabase.from("tournaments").update({ ida_vuelta: idaVuelta }).eq("id", tournamentId!)))) { setBusy(false); return; }
+    if (!(await run(supabase.from("matches").delete().eq("category_id", categoryId!).eq("stage", "liga")))) { setBusy(false); return; }
 
     for (const group of groups) {
       const journeys = roundRobinJourneys(group.teamIds, idaVuelta);
@@ -341,7 +356,7 @@ export function CategoryManage() {
         const isVuelta = j >= idaJornadas;
         const jornadaNum = isVuelta ? j - idaJornadas + 1 : j + 1;
         const roundName = isVuelta ? `Jornada ${jornadaNum} (vuelta)` : `Jornada ${jornadaNum}`;
-        await supabase.from("matches").insert(
+        const ok = await run(supabase.from("matches").insert(
           pairs.map(([a, b], i) => ({
             category_id: categoryId,
             stage: "liga",
@@ -352,7 +367,8 @@ export function CategoryManage() {
             team1_id: a,
             team2_id: b,
           })),
-        );
+        ));
+        if (!ok) { setBusy(false); return; }
       }
     }
     // Ya nacen con las dos parejas conocidas: se agendan de una según los horarios
@@ -364,7 +380,7 @@ export function CategoryManage() {
 
   // ============ PARTIDOS (comunes a zona, fixture y liga) ============
   async function updateMatchTeam(match: Match, slot: 1 | 2, teamId: string) {
-    await supabase.from("matches").update(slot === 1 ? { team1_id: teamId || null } : { team2_id: teamId || null }).eq("id", match.id);
+    if (!(await run(supabase.from("matches").update(slot === 1 ? { team1_id: teamId || null } : { team2_id: teamId || null }).eq("id", match.id)))) return;
     load();
   }
 
@@ -443,17 +459,17 @@ export function CategoryManage() {
             return;
           }
         }
-        await supabase
+        if (!(await run(supabase
           .from("matches")
           .update({ court_id: match.court_id, scheduled_at: match.scheduled_at, auto_scheduled: false })
-          .eq("id", occupant.id);
+          .eq("id", occupant.id)))) return;
       }
     }
 
     setError(null);
     // auto_scheduled: false marca que este horario lo eligió el admin a mano, así el
     // auto-agendado de liga nunca lo va a mover cuando después replanifique otras categorías.
-    await supabase.from("matches").update({ court_id: newCourtId, scheduled_at: newScheduledAt, auto_scheduled: false }).eq("id", match.id);
+    if (!(await run(supabase.from("matches").update({ court_id: newCourtId, scheduled_at: newScheduledAt, auto_scheduled: false }).eq("id", match.id)))) return;
     load();
   }
 
@@ -469,12 +485,13 @@ export function CategoryManage() {
     const winner = matchWinner({ ...match, ...sets });
     if (!winner) { setError("Cargá al menos 2 sets, y que no queden empatados, para definir un ganador."); return; }
     const winner_id = winner === 1 ? match.team1_id : match.team2_id;
-    await supabase.from("matches").update({ ...sets, winner_id }).eq("id", match.id);
+    setError(null);
+    if (!(await run(supabase.from("matches").update({ ...sets, winner_id }).eq("id", match.id)))) return;
     if (match.stage === "fixture" && match.next_match_id && winner_id) {
-      await supabase
+      if (!(await run(supabase
         .from("matches")
         .update(match.next_match_slot === 1 ? { team1_id: winner_id } : { team2_id: winner_id })
-        .eq("id", match.next_match_id);
+        .eq("id", match.next_match_id)))) return;
       // Si con este resultado la próxima ronda quedó con las dos parejas definidas
       // (el otro cruce ya se había jugado), se agenda sola, sin esperar a que el
       // admin vuelva a apretar "Autocompletar horarios".

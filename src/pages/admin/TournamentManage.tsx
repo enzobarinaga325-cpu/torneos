@@ -95,11 +95,20 @@ export function TournamentManage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  /** Ejecuta una escritura a Supabase y, si falla, la muestra en el cartel de error en vez
+   *  de dejar que pase desapercibida — devuelve false para que quien llama corte ahí (no
+   *  siga como si el guardado hubiese entrado). */
+  async function run(promise: PromiseLike<{ error: { message: string } | null }>): Promise<boolean> {
+    const { error: err } = await promise;
+    if (err) { setError(err.message); return false; }
+    return true;
+  }
+
   async function saveMatchMinutes() {
-    await supabase
+    await run(supabase
       .from("tournaments")
       .update({ default_match_minutes: Math.max(15, Number(matchMinutes) || 60) })
-      .eq("id", id!);
+      .eq("id", id!));
   }
 
   /** Crea una fila por cada día entre start_date y end_date que todavía no la tenga. */
@@ -109,13 +118,13 @@ export function TournamentManage() {
     const existing = new Set(days.map((d) => d.date));
     const missing = dates.filter((date) => !existing.has(date));
     if (missing.length > 0) {
-      await supabase.from("tournament_days").insert(missing.map((date) => ({ tournament_id: id, date })));
+      if (!(await run(supabase.from("tournament_days").insert(missing.map((date) => ({ tournament_id: id, date })))))) return;
     }
     load();
   }
 
   async function updateDay(day: TournamentDay, patch: Partial<Pick<TournamentDay, "start_time" | "end_time">>) {
-    await supabase.from("tournament_days").update(patch).eq("id", day.id);
+    if (!(await run(supabase.from("tournament_days").update(patch).eq("id", day.id)))) return;
     setDays((ds) => ds.map((d) => (d.id === day.id ? { ...d, ...patch } : d)));
   }
 
@@ -149,10 +158,10 @@ export function TournamentManage() {
     if (!confirm("¿Vaciar el horario y la cancha de TODOS los partidos de este torneo? Los resultados ya cargados no se tocan.")) return;
     setScheduling(true);
     setError(null);
-    await supabase
+    if (!(await run(supabase
       .from("matches")
       .update({ court_id: null, scheduled_at: null, auto_scheduled: true })
-      .in("category_id", categories.map((c) => c.id));
+      .in("category_id", categories.map((c) => c.id))))) { setScheduling(false); return; }
     setScheduling(false);
     load();
   }
@@ -164,7 +173,7 @@ export function TournamentManage() {
    */
   async function setTournamentStatus(status: "armando" | "en_curso" | "finalizado") {
     if (status === "finalizado" && !confirm("¿Dar el torneo por finalizado? Podés reabrirlo después si hace falta.")) return;
-    await supabase.from("tournaments").update({ status }).eq("id", id!);
+    if (!(await run(supabase.from("tournaments").update({ status }).eq("id", id!)))) return;
     setTournament((t) => (t ? { ...t, status } : t));
   }
 
@@ -173,7 +182,7 @@ export function TournamentManage() {
     setError(null);
     try {
       const url = await uploadSiteImage(file);
-      await supabase.from("tournaments").update({ logo_url: url }).eq("id", id!);
+      if (!(await run(supabase.from("tournaments").update({ logo_url: url }).eq("id", id!)))) { setUploadingLogo(false); return; }
       setTournament((t) => (t ? { ...t, logo_url: url } : t));
     } catch (e) {
       setError("No se pudo subir el logo: " + (e instanceof Error ? e.message : String(e)));
@@ -182,7 +191,7 @@ export function TournamentManage() {
   }
 
   async function removeLogo() {
-    await supabase.from("tournaments").update({ logo_url: null }).eq("id", id!);
+    if (!(await run(supabase.from("tournaments").update({ logo_url: null }).eq("id", id!)))) return;
     setTournament((t) => (t ? { ...t, logo_url: null } : t));
   }
 
@@ -206,9 +215,9 @@ export function TournamentManage() {
     if (categoryIds.length > 0) {
       const { data: existing } = await supabase.from("matches").select("*").in("category_id", categoryIds);
       const unplayedIds = ((existing as Match[]) ?? []).filter((m) => matchWinner(m) == null).map((m) => m.id);
-      if (unplayedIds.length > 0) await supabase.from("matches").delete().in("id", unplayedIds);
+      if (unplayedIds.length > 0 && !(await run(supabase.from("matches").delete().in("id", unplayedIds)))) { setScheduling(false); return; }
     }
-    await supabase.from("tournaments").update({ modalidad: pendingModalidad }).eq("id", id!);
+    if (!(await run(supabase.from("tournaments").update({ modalidad: pendingModalidad }).eq("id", id!)))) { setScheduling(false); return; }
     setPendingModalidad(null);
     setScheduling(false);
     load();
@@ -226,32 +235,32 @@ export function TournamentManage() {
   async function toggleLeagueDay(diaSemana: number, enabled: boolean) {
     if (enabled) {
       if (courts.length === 0) { setError("Cargá al menos una cancha primero."); return; }
-      await supabase.from("horarios_liga").insert(
+      if (!(await run(supabase.from("horarios_liga").insert(
         courts.map((c) => ({ tournament_id: id, court_id: c.id, dia_semana: diaSemana, hora_inicio: "19:00", hora_fin: "23:00" })),
-      );
+      )))) return;
     } else {
       const existingIds = leagueSlots.filter((s) => s.dia_semana === diaSemana).map((s) => s.id);
       if (existingIds.length === 0) return;
       if (!confirm(`¿Borrar el horario de ${DIAS_SEMANA[diaSemana]} en todas las canchas? Los partidos que ya tenía agendados ahí se van a tener que reacomodar.`)) return;
-      await supabase.from("horarios_liga").delete().in("id", existingIds);
+      if (!(await run(supabase.from("horarios_liga").delete().in("id", existingIds)))) return;
     }
     load();
   }
 
   async function toggleLeagueCourtDay(diaSemana: number, courtId: string, enabled: boolean) {
     if (enabled) {
-      await supabase.from("horarios_liga").insert({ tournament_id: id, court_id: courtId, dia_semana: diaSemana, hora_inicio: "19:00", hora_fin: "23:00" });
+      if (!(await run(supabase.from("horarios_liga").insert({ tournament_id: id, court_id: courtId, dia_semana: diaSemana, hora_inicio: "19:00", hora_fin: "23:00" })))) return;
     } else {
       const existing = leagueSlotFor(diaSemana, courtId);
       if (!existing) return;
       if (!confirm(`¿Borrar el horario de ${DIAS_SEMANA[diaSemana]} en esta cancha? Los partidos que ya tenía agendados ahí se van a tener que reacomodar.`)) return;
-      await supabase.from("horarios_liga").delete().eq("id", existing.id);
+      if (!(await run(supabase.from("horarios_liga").delete().eq("id", existing.id)))) return;
     }
     load();
   }
 
   async function updateLeagueSlot(slot: LeagueSlot, patch: Partial<Pick<LeagueSlot, "hora_inicio" | "hora_fin">>) {
-    await supabase.from("horarios_liga").update(patch).eq("id", slot.id);
+    if (!(await run(supabase.from("horarios_liga").update(patch).eq("id", slot.id)))) return;
     setLeagueSlots((s) => s.map((x) => (x.id === slot.id ? { ...x, ...patch } : x)));
   }
 
@@ -298,11 +307,11 @@ export function TournamentManage() {
     if (!confirm("¿Vaciar el horario y la cancha de TODOS los partidos de liga de este torneo? Los resultados ya cargados no se tocan.")) return;
     setScheduling(true);
     setError(null);
-    await supabase
+    if (!(await run(supabase
       .from("matches")
       .update({ court_id: null, scheduled_at: null, auto_scheduled: true })
       .in("category_id", categories.map((c) => c.id))
-      .eq("stage", "liga");
+      .eq("stage", "liga")))) { setScheduling(false); return; }
     setScheduling(false);
     load();
   }
@@ -319,7 +328,7 @@ export function TournamentManage() {
 
   async function deleteCourt(courtId: string) {
     if (!confirm("¿Borrar esta cancha?")) return;
-    await supabase.from("courts").delete().eq("id", courtId);
+    if (!(await run(supabase.from("courts").delete().eq("id", courtId)))) return;
     load();
   }
 
@@ -335,7 +344,7 @@ export function TournamentManage() {
 
   async function deleteCategory(categoryId: string) {
     if (!confirm("¿Borrar esta categoría? Se borran también sus equipos, zonas y partidos.")) return;
-    await supabase.from("categories").delete().eq("id", categoryId);
+    if (!(await run(supabase.from("categories").delete().eq("id", categoryId)))) return;
     load();
   }
 
@@ -349,12 +358,13 @@ export function TournamentManage() {
     const winner = matchWinner({ ...match, ...sets });
     if (!winner) { setError("Cargá al menos 2 sets, y que no queden empatados, para definir un ganador."); return; }
     const winner_id = winner === 1 ? match.team1_id : match.team2_id;
-    await supabase.from("matches").update({ ...sets, winner_id }).eq("id", match.id);
+    setError(null);
+    if (!(await run(supabase.from("matches").update({ ...sets, winner_id }).eq("id", match.id)))) return;
     if (match.stage === "fixture" && match.next_match_id && winner_id) {
-      await supabase
+      if (!(await run(supabase
         .from("matches")
         .update(match.next_match_slot === 1 ? { team1_id: winner_id } : { team2_id: winner_id })
-        .eq("id", match.next_match_id);
+        .eq("id", match.next_match_id)))) return;
       await autoScheduleTournament(id!);
     }
     load();
@@ -424,15 +434,15 @@ export function TournamentManage() {
             return;
           }
         }
-        await supabase
+        if (!(await run(supabase
           .from("matches")
           .update({ court_id: match.court_id, scheduled_at: match.scheduled_at, auto_scheduled: false })
-          .eq("id", occupant.id);
+          .eq("id", occupant.id)))) return;
       }
     }
 
     setError(null);
-    await supabase.from("matches").update({ court_id: newCourtId, scheduled_at: newScheduledAt, auto_scheduled: false }).eq("id", match.id);
+    if (!(await run(supabase.from("matches").update({ court_id: newCourtId, scheduled_at: newScheduledAt, auto_scheduled: false }).eq("id", match.id)))) return;
     load();
   }
 
@@ -474,8 +484,10 @@ export function TournamentManage() {
 
   /** Si después de cancelar quedó algún partido sin poder reacomodarse en ningún otro turno
    *  válido (se quedó sin capacidad), avisa en vez de dejarlo colgado en silencio. */
-  function reportCancelResult(result: { unscheduled: number }) {
-    if (result.unscheduled > 0) {
+  function reportCancelResult(result: { unscheduled: number; error?: string }) {
+    if (result.error) {
+      setError(result.error);
+    } else if (result.unscheduled > 0) {
       setError(
         `Ojo: no quedó lugar para reacomodar ${result.unscheduled} partido${result.unscheduled === 1 ? "" : "s"} — agregá más días u horarios.`,
       );
@@ -485,7 +497,8 @@ export function TournamentManage() {
   }
 
   async function handleRemoveBlackout(blackoutId: string) {
-    await removeBlackout(blackoutId);
+    const { error: err } = await removeBlackout(blackoutId);
+    if (err) { setError(err); return; }
     load();
   }
 

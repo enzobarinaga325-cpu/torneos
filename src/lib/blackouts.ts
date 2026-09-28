@@ -3,7 +3,7 @@ import { localDateStr } from "./format";
 import { repairMatches } from "./repair-schedule";
 import type { ScheduleBlackout } from "./types";
 
-export type CancelResult = { unscheduled: number };
+export type CancelResult = { unscheduled: number; error?: string };
 
 export async function listBlackouts(tournamentId: string): Promise<ScheduleBlackout[]> {
   const { data } = await supabase
@@ -15,8 +15,9 @@ export async function listBlackouts(tournamentId: string): Promise<ScheduleBlack
   return data ?? [];
 }
 
-export async function removeBlackout(id: string): Promise<void> {
-  await supabase.from("schedule_blackouts").delete().eq("id", id);
+export async function removeBlackout(id: string): Promise<{ error?: string }> {
+  const { error } = await supabase.from("schedule_blackouts").delete().eq("id", id);
+  return error ? { error: error.message } : {};
 }
 
 /** Ids de los partidos todavía no jugados que caen justo en el hueco que se está por
@@ -52,7 +53,8 @@ async function findMatchesInSlot(tournamentId: string, date: string, courtId: st
  *  se vuelve a agendar ahí de ahora en más. Los partidos que tenía agendados se reacomodan
  *  ellos solos en el próximo turno libre — el resto del fixture no se toca. */
 export async function cancelDay(tournamentId: string, date: string, courtId: string | null = null): Promise<CancelResult> {
-  await supabase.from("schedule_blackouts").insert({ tournament_id: tournamentId, date, court_id: courtId, hora_inicio: null });
+  const { error } = await supabase.from("schedule_blackouts").insert({ tournament_id: tournamentId, date, court_id: courtId, hora_inicio: null });
+  if (error) return { unscheduled: 0, error: error.message };
   const affectedIds = await findMatchesInSlot(tournamentId, date, courtId, null);
   const { unscheduled } = await repairMatches(tournamentId, affectedIds);
   return { unscheduled };
@@ -68,7 +70,8 @@ export async function cancelTurn(
   const date = localDateStr(match.scheduled_at);
   const dt = new Date(match.scheduled_at);
   const hora = `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}:00`;
-  await supabase.from("schedule_blackouts").insert({ tournament_id: tournamentId, date, court_id: match.court_id, hora_inicio: hora });
+  const { error } = await supabase.from("schedule_blackouts").insert({ tournament_id: tournamentId, date, court_id: match.court_id, hora_inicio: hora });
+  if (error) return { unscheduled: 0, error: error.message };
   const affectedIds = await findMatchesInSlot(tournamentId, date, match.court_id, hora);
   const { unscheduled } = await repairMatches(tournamentId, affectedIds);
   return { unscheduled };

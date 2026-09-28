@@ -53,12 +53,21 @@ export function Tournaments() {
     load();
   }, []);
 
+  /** Ejecuta una escritura a Supabase y, si falla, la muestra en el cartel de error en vez
+   *  de dejar que pase desapercibida — devuelve false para que quien llama corte ahí (no
+   *  siga como si el guardado hubiese entrado). */
+  async function run(promise: PromiseLike<{ error: { message: string } | null }>): Promise<boolean> {
+    const { error: err } = await promise;
+    if (err) { setError(err.message); return false; }
+    return true;
+  }
+
   async function uploadBackground(file: File) {
     setUploadingBg(true);
     setError(null);
     try {
       const url = await uploadSiteImage(file);
-      await supabase.from("site_settings").upsert({ id: 1, background_url: url });
+      if (!(await run(supabase.from("site_settings").upsert({ id: 1, background_url: url })))) { setUploadingBg(false); return; }
       setSettings((s) => ({ ...s, background_url: url }));
     } catch (e) {
       setError("No se pudo subir el fondo: " + (e instanceof Error ? e.message : String(e)));
@@ -67,7 +76,7 @@ export function Tournaments() {
   }
 
   async function removeBackground() {
-    await supabase.from("site_settings").upsert({ id: 1, background_url: null });
+    if (!(await run(supabase.from("site_settings").upsert({ id: 1, background_url: null })))) return;
     setSettings((s) => ({ ...s, background_url: null }));
   }
 
@@ -101,22 +110,22 @@ export function Tournaments() {
   }
 
   async function saveDates(t: Tournament) {
-    await supabase
+    if (!(await run(supabase
       .from("tournaments")
       .update({ start_date: dateDraft.start || null, end_date: dateDraft.end || dateDraft.start || null })
-      .eq("id", t.id);
+      .eq("id", t.id)))) return;
     setEditingDatesFor(null);
     load();
   }
 
   async function togglePublished(t: Tournament) {
-    await supabase.from("tournaments").update({ published: !t.published }).eq("id", t.id);
+    if (!(await run(supabase.from("tournaments").update({ published: !t.published }).eq("id", t.id)))) return;
     load();
   }
 
   async function deleteTournament(t: Tournament) {
     if (!confirm(`¿Borrar el torneo "${t.name}"? Se borran también sus categorías, equipos y partidos. No se puede deshacer.`)) return;
-    await supabase.from("tournaments").delete().eq("id", t.id);
+    if (!(await run(supabase.from("tournaments").delete().eq("id", t.id)))) return;
     load();
   }
 
@@ -126,6 +135,8 @@ export function Tournaments() {
         <h1 className="text-lg font-semibold">Torneos</h1>
         <p className="text-sm text-zinc-500">Creá un torneo, armalo en privado y publicalo cuando esté listo.</p>
       </div>
+
+      {error && <p className="text-sm text-red-600">{error}</p>}
 
       <Card>
         <h2 className="mb-1 text-sm font-semibold">Apariencia del sitio</h2>
@@ -184,7 +195,6 @@ export function Tournaments() {
             <Plus className="h-3.5 w-3.5" /> Crear
           </Button>
         </form>
-        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       </Card>
 
       {loading ? (
