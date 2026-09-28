@@ -157,7 +157,6 @@ export function TournamentDetail() {
           </div>
           <DailyFixtureStory
             tournamentName={tournament.name}
-            logoUrl={tournament.logo_url}
             date={selectedDay}
             matches={allMatches}
             courts={courts}

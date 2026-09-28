@@ -5,6 +5,7 @@ import { useDownloadImage } from "@/lib/useDownloadImage";
 import { localDateStr, toLocalDatetimeInput } from "@/lib/format";
 import { matchWinner } from "@/lib/tournament-logic";
 import { Button, Select } from "./ui";
+import fixtureBackground from "@/assets/fixture-background.png";
 
 const DIA_CORTO = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 
@@ -147,7 +148,6 @@ function MatchRow({
  */
 export function DailyFixtureStory({
   tournamentName,
-  logoUrl,
   date,
   matches,
   courts,
@@ -162,7 +162,6 @@ export function DailyFixtureStory({
   showDownload = true,
 }: {
   tournamentName: string;
-  logoUrl?: string | null;
   date: string;
   matches: Match[];
   courts: Court[];
@@ -201,16 +200,15 @@ export function DailyFixtureStory({
       )}
 
       <div className="overflow-hidden rounded-xl border border-zinc-200">
-        <div ref={ref} className="mx-auto w-full max-w-[480px] bg-gradient-to-b from-zinc-950 via-zinc-950 to-emerald-950">
-          <div className="flex flex-col items-center px-7 pb-3 pt-5">
-            {logoUrl && (
-              // eslint-disable-next-line jsx-a11y/alt-text
-              <img src={logoUrl} crossOrigin="anonymous" alt={tournamentName} className="h-14 w-auto max-w-[60%] object-contain" />
-            )}
-            <p className={`text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-400 ${logoUrl ? "mt-2" : ""}`}>
+        <div
+          ref={ref}
+          className="mx-auto w-full max-w-[480px] bg-[#0b1730] bg-top bg-no-repeat"
+          style={{ backgroundImage: `url(${fixtureBackground})`, backgroundSize: "100% auto" }}
+        >
+          <div className="flex flex-col items-center px-7 pb-3 pt-[188px]">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-400">
               Partidos
             </p>
-            {!logoUrl && <h1 className="mt-1 text-xl font-bold leading-tight text-white">{tournamentName}</h1>}
             <p className="mt-1 text-[11px] font-medium tracking-wide text-emerald-100/70">{dayLabel(date)}</p>
             <div className="mt-2 h-px w-14 bg-emerald-500/50" />
           </div>

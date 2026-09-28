@@ -874,7 +874,6 @@ export function TournamentManage() {
 
           <DailyFixtureStory
             tournamentName={tournament.name}
-            logoUrl={tournament.logo_url}
             date={selectedGridDay}
             matches={allMatches}
             courts={courts}
