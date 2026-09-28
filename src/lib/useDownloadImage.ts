@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import html2canvas from "html2canvas-pro";
 
 const MAX_OUTPUT_HEIGHT = 4000; // límite de canvas seguro para navegadores de celular (sobre todo iOS)
 
@@ -20,6 +19,11 @@ export function useDownloadImage(fileName: string) {
     if (!node) return;
     setDownloading(true);
     try {
+      // Se importa recién acá (no arriba del archivo) para que html2canvas-pro -- una
+      // librería pesada que solo hace falta al tocar "Descargar imagen" -- no viaje en el
+      // bundle principal para todo el mundo que nunca usa esta función.
+      const { default: html2canvas } = await import("html2canvas-pro");
+
       // Si alguna <img> (ej. el logo) todavía no terminó de cargar, el alto que se mide
       // queda corto y se exporta solo la parte de arriba — hay que esperarlas.
       const imgs = Array.from(node.querySelectorAll("img"));
