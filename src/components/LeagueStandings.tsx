@@ -60,8 +60,12 @@ export function LeagueStandings({
                 <td className="px-1 text-center">{s.played}</td>
                 <td className="px-1 text-center">{s.won}</td>
                 <td className="px-1 text-center">{s.lost}</td>
-                <td className="whitespace-nowrap px-1 text-center">{s.sets_won}-{s.sets_lost}</td>
-                <td className="whitespace-nowrap px-1 text-center">{s.games_won}-{s.games_lost}</td>
+                <td className="whitespace-nowrap px-1 text-center">
+                  <span className="text-emerald-600">{s.sets_won}</span>-<span className="text-red-500">{s.sets_lost}</span>
+                </td>
+                <td className="whitespace-nowrap px-1 text-center">
+                  <span className="text-emerald-600">{s.games_won}</span>-<span className="text-red-500">{s.games_lost}</span>
+                </td>
                 <td className="px-1 text-center font-semibold text-emerald-700">{s.won * 2}</td>
               </tr>
             ))}
