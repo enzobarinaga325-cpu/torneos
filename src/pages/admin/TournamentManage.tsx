@@ -60,6 +60,11 @@ export function TournamentManage() {
   const [error, setError] = useState<string | null>(null);
   const [checkingFixture, setCheckingFixture] = useState(false);
   const [healthReport, setHealthReport] = useState<FixtureHealthReport | null>(null);
+  // Para acciones que reordenan o cancelan un día entero: un click de más (o de menos) tiene
+  // mucho radio de daño, así que en vez de un simple confirm() del navegador (un solo click
+  // sin pensar) piden escribir una palabra a propósito antes de ejecutarse.
+  const [pendingDanger, setPendingDanger] = useState<{ title: string; description: string; confirmWord: string; run: () => void } | null>(null);
+  const [dangerInput, setDangerInput] = useState("");
 
   async function load() {
     const [{ data: t }, { data: c }, { data: cats }, { data: d }, { data: ls }, { data: bo }] = await Promise.all([
@@ -258,11 +263,23 @@ export function TournamentManage() {
     setLeagueSlots((s) => s.map((x) => (x.id === slot.id ? { ...x, ...patch } : x)));
   }
 
-  async function autoScheduleLeagueClick() {
+  function autoScheduleLeagueClick() {
     if (courts.length === 0) { setError("Cargá al menos una cancha primero."); return; }
     if (leagueSlots.length === 0) { setError("Cargá al menos un horario semanal de la liga primero."); return; }
     if (!tournament?.start_date) { setError("Cargale una fecha de inicio al torneo primero (desde la lista de Torneos)."); return; }
     if (categories.length === 0) return;
+    setDangerInput("");
+    setPendingDanger({
+      title: "Autocompletar horarios",
+      description:
+        "Esto vuelve a repartir TODOS los partidos de liga que todavía no se jugaron y que nadie movió a mano (los que sí movió el admin no se tocan). Puede reubicar partidos que ya tenían un horario asignado.",
+      confirmWord: "AGENDAR",
+      run: runAutoScheduleLeague,
+    });
+  }
+
+  async function runAutoScheduleLeague() {
+    setPendingDanger(null);
     setScheduling(true);
     setError(null);
     await saveMatchMinutes();
@@ -462,14 +479,21 @@ export function TournamentManage() {
   /** Cancela TODO el día elegido en la grilla (todas las canchas) — por lluvia, por ejemplo.
    *  Los partidos que tenía agendados no se pierden: vuelven al pool y "Autocompletar
    *  horarios" los reacomoda solo en el próximo turno libre. */
-  async function handleCancelDay() {
+  function handleCancelDay() {
     if (!selectedGridDay) return;
-    if (
-      !confirm(
-        `¿Cancelar TODO el día ${selectedGridDay} (todas las canchas)? Los partidos que tenía agendados no se pierden: se van a reacomodar solos en los próximos turnos libres.`,
-      )
-    )
-      return;
+    setDangerInput("");
+    setPendingDanger({
+      title: `Cancelar el día ${selectedGridDay}`,
+      description:
+        "Se cancela TODO ese día (todas las canchas) para siempre: nunca más se va a agendar ningún partido ahí. Los partidos que tenía agendados no se pierden, se reacomodan solos en los próximos turnos libres.",
+      confirmWord: "CANCELAR",
+      run: runCancelDay,
+    });
+  }
+
+  async function runCancelDay() {
+    if (!selectedGridDay) return;
+    setPendingDanger(null);
     setScheduling(true);
     setError(null);
     const result = await cancelDay(id!, selectedGridDay);
@@ -587,6 +611,35 @@ export function TournamentManage() {
               <Button variant="secondary" onClick={() => setPendingModalidad(null)}>Cancelar</Button>
               <Button variant="danger" onClick={confirmModalidadChange} disabled={scheduling}>
                 {scheduling ? "Cambiando…" : "Confirmar cambio"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingDanger && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={() => setPendingDanger(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
+            <h2 className="mb-2 text-base font-semibold">{pendingDanger.title}</h2>
+            <p className="mb-4 text-sm text-zinc-600">{pendingDanger.description}</p>
+            <p className="mb-1.5 text-sm text-zinc-600">
+              Para confirmar, escribí <span className="font-semibold text-zinc-900">{pendingDanger.confirmWord}</span>:
+            </p>
+            <Input
+              value={dangerInput}
+              onChange={(e) => setDangerInput(e.target.value)}
+              placeholder={pendingDanger.confirmWord}
+              className="mb-4"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setPendingDanger(null)}>Cancelar</Button>
+              <Button
+                variant="danger"
+                onClick={pendingDanger.run}
+                disabled={scheduling || dangerInput.trim().toUpperCase() !== pendingDanger.confirmWord}
+              >
+                {scheduling ? "Ejecutando…" : "Confirmar"}
               </Button>
             </div>
           </div>
