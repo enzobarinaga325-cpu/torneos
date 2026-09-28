@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Download, Loader2, Pencil } from "lucide-react";
 import type { Category, Court, Match, Team } from "@/lib/types";
-import { useDownloadImage } from "@/lib/useDownloadImage";
+import { useStoryDownload } from "@/lib/useStoryDownload";
 import { localDateStr, toLocalDatetimeInput } from "@/lib/format";
 import { matchWinner } from "@/lib/tournament-logic";
 import { Button, Select } from "./ui";
@@ -63,34 +63,28 @@ function MatchRow({
   }
 
   return (
-    <div className="py-2.5">
-      <div className="flex items-start gap-3">
-        <div className="flex w-11 shrink-0 flex-col items-center pt-0.5">
-          <span className="text-[14px] font-extrabold leading-none text-emerald-300">
-            {timeLabel(match.scheduled_at as string)}
-          </span>
-        </div>
-        <div className="min-w-0 flex-1">
-          {category && <p className="break-words text-[9px] font-medium uppercase tracking-wide text-white/45">{category}</p>}
-          <p className={`break-words text-[12.5px] leading-snug ${winner === 1 ? "font-bold text-emerald-300" : "font-semibold text-white"}`}>
-            {team1}
-          </p>
-          <p className={`break-words text-[12.5px] leading-snug ${winner === 2 ? "font-bold text-emerald-300" : "font-semibold text-white"}`}>
-            <span className="font-normal text-white/40">vs </span>{team2}
-          </p>
-          {score && <p className="mt-0.5 font-mono text-[10px] text-white/55">{score}</p>}
-        </div>
-        {editable && (
-          <button
-            data-html2canvas-ignore="true"
-            onClick={() => setEditing((e) => !e)}
-            className="shrink-0 rounded-md p-1 text-white/40 hover:bg-white/10 hover:text-emerald-300"
-            aria-label={`Cargar resultado ${team1} vs ${team2}`}
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
+    <div className="relative py-1.5 text-center">
+      <span className="text-[13px] font-extrabold leading-none text-emerald-300">
+        {timeLabel(match.scheduled_at as string)}
+      </span>
+      {category && <p className="mt-0.5 break-words text-[9px] font-medium uppercase tracking-wide text-white/45">{category}</p>}
+      <p className={`mt-0.5 break-words text-[12.5px] leading-tight ${winner === 1 ? "font-bold text-emerald-300" : "font-semibold text-white"}`}>
+        {team1}
+      </p>
+      <p className={`break-words text-[12.5px] leading-tight ${winner === 2 ? "font-bold text-emerald-300" : "font-semibold text-white"}`}>
+        <span className="font-normal text-white/35">vs </span>{team2}
+      </p>
+      {score && <p className="mt-0.5 font-mono text-[10px] text-white/55">{score}</p>}
+      {editable && (
+        <button
+          data-html2canvas-ignore="true"
+          onClick={() => setEditing((e) => !e)}
+          className="absolute right-0 top-1.5 shrink-0 rounded-md p-1 text-white/40 hover:bg-white/10 hover:text-emerald-300"
+          aria-label={`Cargar resultado ${team1} vs ${team2}`}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+      )}
 
       {editable && editing && (
         <div data-html2canvas-ignore="true" className="mt-1.5 flex flex-col gap-2 rounded-lg bg-zinc-50 p-2">
@@ -179,10 +173,11 @@ export function DailyFixtureStory({
   onCancelTurn?: (m: Match) => void;
   showDownload?: boolean;
 }) {
-  const { ref, download, downloading } = useDownloadImage(fileName, {
+  const { headerRef, contentRef, footerRef, download, downloading } = useStoryDownload(fileName, {
     width: 1080,
     height: 1920,
     fallbackColor: "#0b1730",
+    backgroundImageUrl: fixtureBackground,
   });
 
   const dayMatches = matches
@@ -209,7 +204,6 @@ export function DailyFixtureStory({
 
       <div className="mx-auto w-full max-w-[480px]">
         <div
-          ref={ref}
           className="overflow-hidden rounded-2xl border border-white/10 bg-[#0b1730] bg-top bg-no-repeat shadow-[0_8px_30px_rgba(0,0,0,0.35)]"
           style={{ backgroundImage: `url(${fixtureBackground})`, backgroundSize: "100% auto" }}
         >
@@ -217,7 +211,7 @@ export function DailyFixtureStory({
               fondo sea cual sea el ancho real de la tarjeta -- las % de padding-top se
               calculan sobre el ancho del contenedor, igual que el alto de la imagen de
               fondo (bg-size: 100% auto), así los dos escalan siempre juntos. */}
-          <div className="flex flex-col items-center px-7 pb-3 pt-[35%]">
+          <div ref={headerRef} className="flex flex-col items-center px-7 pb-3 pt-[35%]">
             <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-400">
               Partidos
             </p>
@@ -225,14 +219,15 @@ export function DailyFixtureStory({
             <div className="mt-2 h-px w-14 bg-emerald-500/50" />
           </div>
 
-          <div className="flex flex-col gap-3 px-4 pb-5">
+          <div ref={contentRef} className="flex flex-col gap-2 px-7 pb-4 [text-shadow:0_1px_4px_rgba(0,0,0,0.65)]">
             {byCourt.map(({ court, matches: cm }) => (
-              <div key={court.id} className="overflow-hidden rounded-xl border border-white/15 bg-slate-950/55 backdrop-blur-sm">
-                <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2">
-                  <span className="h-3.5 w-1 shrink-0 rounded-full bg-emerald-400" />
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-white">{court.name}</p>
+              <div key={court.id} className="flex flex-col gap-0.5">
+                <div className="flex items-center justify-center gap-2.5">
+                  <div className="h-px w-8 bg-white/25" />
+                  <p className="shrink-0 text-[11px] font-bold uppercase tracking-wider text-emerald-300">{court.name}</p>
+                  <div className="h-px w-8 bg-white/25" />
                 </div>
-                <div className="flex flex-col divide-y divide-white/10 px-4">
+                <div className="flex flex-col divide-y divide-white/10">
                   {cm.map((m) => (
                     <MatchRow
                       key={m.id}
@@ -253,7 +248,7 @@ export function DailyFixtureStory({
             ))}
           </div>
 
-          <div className="pb-3 text-center">
+          <div ref={footerRef} className="pb-3 text-center">
             <p className="text-[9px] font-medium uppercase tracking-[0.2em] text-emerald-100/30">{tournamentName}</p>
           </div>
         </div>
