@@ -179,7 +179,11 @@ export function DailyFixtureStory({
   onCancelTurn?: (m: Match) => void;
   showDownload?: boolean;
 }) {
-  const { ref, download, downloading } = useDownloadImage(fileName);
+  const { ref, download, downloading } = useDownloadImage(fileName, {
+    width: 1080,
+    height: 1920,
+    fallbackColor: "#0b1730",
+  });
 
   const dayMatches = matches
     .filter((m) => m.scheduled_at && localDateStr(m.scheduled_at) === date)
@@ -209,7 +213,11 @@ export function DailyFixtureStory({
           className="overflow-hidden rounded-2xl border border-white/10 bg-[#0b1730] bg-top bg-no-repeat shadow-[0_8px_30px_rgba(0,0,0,0.35)]"
           style={{ backgroundImage: `url(${fixtureBackground})`, backgroundSize: "100% auto" }}
         >
-          <div className="flex flex-col items-center px-7 pb-3 pt-[188px]">
+          {/* padding-top en % (no px fijo): así el texto siempre cae debajo del logo del
+              fondo sea cual sea el ancho real de la tarjeta -- las % de padding-top se
+              calculan sobre el ancho del contenedor, igual que el alto de la imagen de
+              fondo (bg-size: 100% auto), así los dos escalan siempre juntos. */}
+          <div className="flex flex-col items-center px-7 pb-3 pt-[35%]">
             <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-400">
               Partidos
             </p>
