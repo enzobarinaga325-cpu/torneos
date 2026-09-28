@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, CloudRain, Image as ImageIcon, Printer, RefreshCw, Plus, RotateCcw, Trash2, X } from "lucide-react";
+import { ArrowLeft, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, CloudRain, Printer, RefreshCw, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Category, Court, LeagueSlot, Match, Modalidad, ScheduleBlackout, Team, Tournament, TournamentDay } from "@/lib/types";
 import { matchWinner } from "@/lib/tournament-logic";
@@ -9,7 +9,6 @@ import { autoScheduleLeague } from "@/lib/league-autoschedule";
 import { fillScheduleGaps } from "@/lib/fill-gaps";
 import { checkFixtureHealth, type FixtureHealthReport } from "@/lib/fixture-health";
 import { cancelDay, cancelTurn, removeBlackout } from "@/lib/blackouts";
-import { uploadSiteImage } from "@/lib/images";
 import { DIAS_SEMANA } from "@/lib/league-logic";
 import { validateLeagueSlotTime, validateTournamentDaySlotTime } from "@/lib/slot-validation";
 import { localDateStr, todayStr, toLocalDatetimeInput } from "@/lib/format";
@@ -57,7 +56,6 @@ export function TournamentManage() {
   const [matchMinutes, setMatchMinutes] = useState("60");
   const [scheduling, setScheduling] = useState(false);
   const [pendingModalidad, setPendingModalidad] = useState<Modalidad | null>(null);
-  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [horariosOpen, setHorariosOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checkingFixture, setCheckingFixture] = useState(false);
@@ -189,24 +187,6 @@ export function TournamentManage() {
     if (status === "finalizado" && !confirm("¿Dar el torneo por finalizado? Podés reabrirlo después si hace falta.")) return;
     if (!(await run(supabase.from("tournaments").update({ status }).eq("id", id!)))) return;
     setTournament((t) => (t ? { ...t, status } : t));
-  }
-
-  async function uploadLogo(file: File) {
-    setUploadingLogo(true);
-    setError(null);
-    try {
-      const url = await uploadSiteImage(file);
-      if (!(await run(supabase.from("tournaments").update({ logo_url: url }).eq("id", id!)))) { setUploadingLogo(false); return; }
-      setTournament((t) => (t ? { ...t, logo_url: url } : t));
-    } catch (e) {
-      setError("No se pudo subir el logo: " + (e instanceof Error ? e.message : String(e)));
-    }
-    setUploadingLogo(false);
-  }
-
-  async function removeLogo() {
-    if (!(await run(supabase.from("tournaments").update({ logo_url: null }).eq("id", id!)))) return;
-    setTournament((t) => (t ? { ...t, logo_url: null } : t));
   }
 
   // ============ MODALIDAD ============
@@ -592,39 +572,6 @@ export function TournamentManage() {
           <option value="torneo">Torneo</option>
           <option value="liga">Liga</option>
         </Select>
-      </Card>
-
-      <Card className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold">Logo</h2>
-          <p className="text-xs text-zinc-500">Aparece en el cartel semanal para Instagram y otras vistas para compartir.</p>
-        </div>
-        <div className="flex items-center gap-3">
-          {tournament.logo_url ? (
-            <img src={tournament.logo_url} alt="Logo" className="h-12 w-20 rounded-lg border border-zinc-200 object-contain bg-black" />
-          ) : (
-            <div className="flex h-12 w-20 items-center justify-center rounded-lg border border-dashed border-zinc-300 text-zinc-400">
-              <ImageIcon className="h-4 w-4" />
-            </div>
-          )}
-          <div className="flex flex-col gap-1">
-            <label className="cursor-pointer text-sm text-emerald-700 underline">
-              {uploadingLogo ? "Subiendo…" : tournament.logo_url ? "Cambiar logo" : "Subir logo"}
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                disabled={uploadingLogo}
-                onChange={(e) => e.target.files?.[0] && uploadLogo(e.target.files[0])}
-              />
-            </label>
-            {tournament.logo_url && (
-              <button onClick={removeLogo} className="text-left text-sm text-zinc-500 underline">
-                Quitar logo
-              </button>
-            )}
-          </div>
-        </div>
       </Card>
 
       {pendingModalidad && (

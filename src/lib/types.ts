@@ -18,7 +18,7 @@ export type Tournament = {
   published: boolean;
   modalidad: Modalidad;
   ida_vuelta: boolean; // solo aplica a modalidad "liga": todos contra todos dos veces
-  logo_url: string | null; // se muestra en el cartel semanal para Instagram, etc.
+  logo_url: string | null; // ya no se usa en la UI, queda por si se reactiva más adelante
   created_at: string;
 };
 
