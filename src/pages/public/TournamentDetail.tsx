@@ -12,6 +12,35 @@ import { LeagueStandings } from "@/components/LeagueStandings";
 import { DailyFixtureStory } from "@/components/DailyFixtureStory";
 import { Select, Spinner } from "@/components/ui";
 
+/**
+ * Para el público solo se ve una semana de la grilla diaria a la vez, en vez de todo el
+ * torneo de una — la semana "activa" es la de hoy (o la primera que tenga partidos, si hoy
+ * cae en una semana sin nada). Un día antes de que termine esa semana (el día antes del
+ * último día con partidos de esa semana — para una liga lunes a viernes, eso es el jueves)
+ * ya se habilita también la semana siguiente, para que la gente pueda ir mirando con
+ * anticipación. Las semanas ya jugadas quedan siempre visibles.
+ */
+function computeVisibleDays(availableDays: string[], startDate: string | null, todayIso: string): string[] {
+  if (availableDays.length === 0 || !startDate) return availableDays;
+  const [sy, sm, sd] = startDate.split("-").map(Number);
+  const start = new Date(sy, sm - 1, sd);
+  const toDate = (s: string) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+  const weekIndexOf = (s: string) => Math.floor((toDate(s).getTime() - start.getTime()) / 86400000 / 7);
+
+  const todayWeek = Math.max(0, weekIndexOf(todayIso));
+  const weeksWithDays = [...new Set(availableDays.map(weekIndexOf))].sort((a, b) => a - b);
+  const activeWeek = weeksWithDays.find((w) => w >= todayWeek) ?? weeksWithDays[weeksWithDays.length - 1];
+
+  const currentWeekDays = availableDays.filter((d) => weekIndexOf(d) === activeWeek);
+  let maxRevealedWeek = activeWeek;
+  const lastOfCurrent = currentWeekDays[currentWeekDays.length - 1];
+  if (lastOfCurrent) {
+    const unlockDate = new Date(toDate(lastOfCurrent).getTime() - 86400000);
+    if (toDate(todayIso) >= unlockDate) maxRevealedWeek = activeWeek + 1;
+  }
+  return availableDays.filter((d) => weekIndexOf(d) <= maxRevealedWeek);
+}
+
 export function TournamentDetail() {
   const { slug } = useParams<{ slug: string }>();
   const [tournament, setTournament] = useState<Tournament | null | undefined>(undefined);
@@ -53,8 +82,9 @@ export function TournamentDetail() {
           ]);
           setAllTeams(allT ?? []);
           setAllMatches((allM as Match[]) ?? []);
-          const dates = [...new Set((allM ?? []).map((m) => localDateStr(m.scheduled_at as string)))].sort();
+          const allDates = [...new Set((allM ?? []).map((m) => localDateStr(m.scheduled_at as string)))].sort();
           const today = todayStr();
+          const dates = computeVisibleDays(allDates, t.start_date, today);
           const preferred = dates.find((d) => d >= today) ?? dates[0];
           if (preferred) setSelectedDay(preferred);
         }
@@ -82,10 +112,11 @@ export function TournamentDetail() {
 
   const allTeamsById = useMemo(() => Object.fromEntries(allTeams.map((t) => [t.id, t])), [allTeams]);
   const categoriesById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories]);
-  const availableDays = useMemo(
-    () => [...new Set(allMatches.map((m) => localDateStr(m.scheduled_at as string)))].sort(),
-    [allMatches],
-  );
+  const availableDays = useMemo(() => {
+    const allDays = [...new Set(allMatches.map((m) => localDateStr(m.scheduled_at as string)))].sort();
+    return computeVisibleDays(allDays, tournament?.start_date ?? null, todayStr());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allMatches, tournament?.start_date]);
 
   if (tournament === undefined) {
     return (
@@ -173,47 +204,6 @@ export function TournamentDetail() {
                         showDownload={false}
                       />
                     </div>
-
-                    {zoneLigaMatches.length > 0 && (
-                      <div>
-                        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Fixture por jornada</h2>
-                        <div className="flex flex-col gap-3">
-                          {[...new Set(zoneLigaMatches.map((m) => m.round_order))].sort((a, b) => (a ?? 0) - (b ?? 0)).map((ro) => {
-                            const roundMatches = zoneLigaMatches.filter((m) => m.round_order === ro);
-                            return (
-                              <div key={ro} className="rounded-xl border border-zinc-200 bg-white p-4">
-                                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">{roundMatches[0]?.round_name}</h3>
-                                <div className="flex flex-col gap-2">
-                                  {roundMatches.map((m) => {
-                                    const winner = matchWinner(m);
-                                    return (
-                                      <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-sm">
-                                        <div className="flex flex-1 items-center justify-between gap-2 min-w-[180px]">
-                                          <span className={winner === 1 ? "font-semibold text-emerald-700" : ""}>
-                                            {teamsById[m.team1_id ?? ""]?.name ?? "?"}
-                                          </span>
-                                          <span className="text-xs text-zinc-400">vs</span>
-                                          <span className={winner === 2 ? "font-semibold text-emerald-700" : ""}>
-                                            {teamsById[m.team2_id ?? ""]?.name ?? "?"}
-                                          </span>
-                                        </div>
-                                        {m.scheduled_at && (
-                                          <span className="shrink-0 font-mono text-xs text-zinc-500">
-                                            {new Date(m.scheduled_at).toLocaleString("es-AR", {
-                                              weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
-                                            })}
-                                          </span>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 );
               })}
