@@ -17,6 +17,7 @@ const DIA_LARGO = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Vierne
 // diseño (fondo, tipografía, espaciados) salen siempre exactas sin importar el dispositivo.
 const DESIGN_WIDTH = 480;
 const HORA_COL_WIDTH = 65; // px de referencia
+const WINNER_COLOR = "#34D399"; // el único verde permitido en esta grilla: marca quién ganó
 
 type SetsDraft = Pick<Match, "set1_team1" | "set1_team2" | "set2_team1" | "set2_team2" | "set3_team1" | "set3_team2">;
 
@@ -110,11 +111,17 @@ function MatchCell({
           {category}
         </p>
       )}
-      <div className={`mt-1 leading-[17px] ${winner === 1 ? "font-bold" : "font-semibold"} text-white`}>
+      <div
+        className={`mt-1 leading-[17px] ${winner === 1 ? "font-bold" : "font-semibold text-white"}`}
+        style={winner === 1 ? { color: WINNER_COLOR } : undefined}
+      >
         {splitPlayers(team1).map((p, i) => <p key={i} className="text-[14px]">{p}</p>)}
       </div>
       <p className="text-[8px] font-medium" style={{ color: "#96A2BC" }}>vs</p>
-      <div className={`leading-[17px] ${winner === 2 ? "font-bold" : "font-semibold"} text-white`}>
+      <div
+        className={`leading-[17px] ${winner === 2 ? "font-bold" : "font-semibold text-white"}`}
+        style={winner === 2 ? { color: WINNER_COLOR } : undefined}
+      >
         {splitPlayers(team2).map((p, i) => <p key={i} className="text-[14px]">{p}</p>)}
       </div>
       {score && <p className="mt-0.5 text-[9px] font-medium" style={{ color: "#96A2BC" }}>{score}</p>}
