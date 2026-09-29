@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Download, Loader2, Pencil } from "lucide-react";
+import { Ban, Download, Loader2, Pencil } from "lucide-react";
 import type { Category, Court, Match, Team } from "@/lib/types";
 import { useStoryDownload } from "@/lib/useStoryDownload";
 import { useDesignScale } from "@/lib/useDesignScale";
@@ -125,6 +125,20 @@ function MatchCell({
         {splitPlayers(team2).map((p, i) => <p key={i} className="text-[14px]">{p}</p>)}
       </div>
       {score && <p className="mt-0.5 text-[9px] font-medium" style={{ color: "#96A2BC" }}>{score}</p>}
+      {editable && !winner && onCancelTurn && (
+        // Botón directo, sin tener que abrir antes el lápiz -- el "Cancelar turno" que ya
+        // estaba adentro del panel de edición quedaba escondido entre los inputs de sets,
+        // costaba encontrarlo. Este actúa igual (mismo `onCancelTurn`, con su confirm()
+        // desde TournamentManage), solo que es visible siempre.
+        <button
+          data-html2canvas-ignore="true"
+          onClick={() => onCancelTurn(match)}
+          className="absolute right-7 top-1 shrink-0 rounded-md p-1 text-white/40 hover:bg-red-500/20 hover:text-red-300"
+          aria-label={`Cancelar turno ${team1} vs ${team2}`}
+        >
+          <Ban className="h-3.5 w-3.5" />
+        </button>
+      )}
       {editable && (
         <button
           data-html2canvas-ignore="true"
