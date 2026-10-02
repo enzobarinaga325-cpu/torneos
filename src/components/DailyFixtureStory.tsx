@@ -3,8 +3,9 @@ import { Ban, Download, Loader2, Pencil } from "lucide-react";
 import type { Category, Court, Match, Team } from "@/lib/types";
 import { useStoryDownload } from "@/lib/useStoryDownload";
 import { useDesignScale } from "@/lib/useDesignScale";
+import type { TeamAvailability, TeamUnavailability } from "@/lib/types";
 import { localDateStr, toLocalDatetimeInput } from "@/lib/format";
-import { matchWinner } from "@/lib/tournament-logic";
+import { isTeamAvailable, isTeamAvailableOnDate, matchWinner } from "@/lib/tournament-logic";
 import { Button, Select } from "./ui";
 import ordenDeJuegoBackground from "@/assets/orden-de-juego-background.jpg";
 
@@ -54,9 +55,23 @@ type SwapOption = { matchId: string; label: string };
  * ese otro partido pasa a jugar en el horario de este, y viceversa. Así el admin elige el
  * rival nuevo por nombre en vez de tener que ir a buscar manualmente la fecha del otro
  * partido para moverlo.
+ *
+ * Solo se ofrecen los intercambios que no le rompan la disponibilidad cargada a NINGUNA de
+ * las dos parejas que cambian de horario (el equipo fijo no se mueve, así que el suyo no
+ * hace falta chequearlo de nuevo acá): la pareja que sale de este partido tiene que poder
+ * jugar en el horario nuevo, y la que entra tiene que poder jugar en este horario.
  */
-function swapOptions(match: Match, fixedTeamId: string | null, matches: Match[], teamsById: Record<string, Team>): SwapOption[] {
-  if (!fixedTeamId) return [];
+function swapOptions(
+  match: Match,
+  fixedTeamId: string | null,
+  matches: Match[],
+  teamsById: Record<string, Team>,
+  duration: number,
+  availability: Pick<TeamAvailability, "team_id" | "dia_semana" | "hora_inicio" | "hora_fin">[],
+  unavailability: Pick<TeamUnavailability, "team_id" | "start_date" | "end_date">[],
+): SwapOption[] {
+  if (!fixedTeamId || !match.scheduled_at) return [];
+  const movingTeamId = match.team1_id === fixedTeamId ? match.team2_id : match.team1_id;
   return matches
     .filter((m) =>
       m.id !== match.id &&
@@ -72,6 +87,16 @@ function swapOptions(match: Match, fixedTeamId: string | null, matches: Match[],
       const opponentId = m.team1_id === fixedTeamId ? m.team2_id : m.team1_id;
       const opponentName = opponentId ? teamsById[opponentId]?.name : null;
       if (!opponentName) return null;
+      const newSlotForMoving = m.scheduled_at as string;
+      const newSlotForOpponent = match.scheduled_at as string;
+      if (movingTeamId) {
+        if (!isTeamAvailable(availability, movingTeamId, newSlotForMoving, duration)) return null;
+        if (!isTeamAvailableOnDate(unavailability, movingTeamId, newSlotForMoving)) return null;
+      }
+      if (opponentId) {
+        if (!isTeamAvailable(availability, opponentId, newSlotForOpponent, duration)) return null;
+        if (!isTeamAvailableOnDate(unavailability, opponentId, newSlotForOpponent)) return null;
+      }
       const when = `${localDateStr(m.scheduled_at as string)} ${timeLabel(m.scheduled_at as string)}hs`;
       return { matchId: m.id, label: `${opponentName} (${when})` };
     })
@@ -90,7 +115,7 @@ function categoryColor(name?: string): string {
 
 function MatchCell({
   match, category, team1, team2, courts, editable, onSaveResult, onSlotChange, onCancelTurn,
-  allMatches, teamsById, onSwapOpponent,
+  allMatches, teamsById, onSwapOpponent, teamAvailability, teamUnavailability, matchDurationMinutes,
 }: {
   match: Match;
   category?: string;
@@ -104,6 +129,9 @@ function MatchCell({
   allMatches?: Match[];
   teamsById?: Record<string, Team>;
   onSwapOpponent?: (m: Match, otherMatch: Match) => void;
+  teamAvailability?: Pick<TeamAvailability, "team_id" | "dia_semana" | "hora_inicio" | "hora_fin">[];
+  teamUnavailability?: Pick<TeamUnavailability, "team_id" | "start_date" | "end_date">[];
+  matchDurationMinutes?: number;
 }) {
   const [editing, setEditing] = useState(false);
   const [sets, setSets] = useState<SetsDraft>({
@@ -126,10 +154,13 @@ function MatchCell({
   // termina acá) -- así el admin cambia el rival eligiendo un nombre, sin ir a buscar la
   // fecha a mano.
   const canSwap = Boolean(editable && allMatches && teamsById && onSwapOpponent);
+  const duration = matchDurationMinutes ?? 60;
+  const avail = teamAvailability ?? [];
+  const unavail = teamUnavailability ?? [];
   // team1 queda fijo -- estas son las parejas que podrían pasar a jugar en el lugar de team2.
-  const optionsToReplaceTeam2 = canSwap ? swapOptions(match, match.team1_id, allMatches!, teamsById!) : [];
+  const optionsToReplaceTeam2 = canSwap ? swapOptions(match, match.team1_id, allMatches!, teamsById!, duration, avail, unavail) : [];
   // team2 queda fijo -- estas son las parejas que podrían pasar a jugar en el lugar de team1.
-  const optionsToReplaceTeam1 = canSwap ? swapOptions(match, match.team2_id, allMatches!, teamsById!) : [];
+  const optionsToReplaceTeam1 = canSwap ? swapOptions(match, match.team2_id, allMatches!, teamsById!, duration, avail, unavail) : [];
 
   function swap(matchId: string) {
     const other = allMatches?.find((m) => m.id === matchId);
@@ -313,6 +344,9 @@ export function DailyFixtureStory({
   onSlotChange,
   onCancelTurn,
   onSwapOpponent,
+  teamAvailability,
+  teamUnavailability,
+  matchDurationMinutes,
   showDownload = true,
 }: {
   tournamentName: string;
@@ -327,6 +361,9 @@ export function DailyFixtureStory({
   onSlotChange?: (m: Match, patch: { courtId: string | null; iso: string | null }) => void;
   onCancelTurn?: (m: Match) => void;
   onSwapOpponent?: (m: Match, otherMatch: Match) => void;
+  teamAvailability?: Pick<TeamAvailability, "team_id" | "dia_semana" | "hora_inicio" | "hora_fin">[];
+  teamUnavailability?: Pick<TeamUnavailability, "team_id" | "start_date" | "end_date">[];
+  matchDurationMinutes?: number;
   showDownload?: boolean;
 }) {
   const { headerRef, contentRef, footerRef, download, downloading } = useStoryDownload(fileName, {
@@ -430,6 +467,9 @@ export function DailyFixtureStory({
                               allMatches={matches}
                               teamsById={teamsById}
                               onSwapOpponent={onSwapOpponent}
+                              teamAvailability={teamAvailability}
+                              teamUnavailability={teamUnavailability}
+                              matchDurationMinutes={matchDurationMinutes}
                             />
                           ) : (
                             <p className="pl-[13px] text-[10px] font-medium" style={{ color: "#96A2BC" }}>Libre</p>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, CloudRain, Printer, RefreshCw, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { Category, Court, LeagueSlot, Match, Modalidad, ScheduleBlackout, Team, Tournament, TournamentDay } from "@/lib/types";
+import type { Category, Court, LeagueSlot, Match, Modalidad, ScheduleBlackout, Team, TeamAvailability, TeamUnavailability, Tournament, TournamentDay } from "@/lib/types";
 import { matchWinner } from "@/lib/tournament-logic";
 import { autoScheduleTournament } from "@/lib/autoschedule";
 import { autoScheduleLeague } from "@/lib/league-autoschedule";
@@ -98,6 +98,8 @@ export function TournamentManage() {
   const [unscheduledMatches, setUnscheduledMatches] = useState<Match[]>([]);
   const [leagueSlots, setLeagueSlots] = useState<LeagueSlot[]>([]);
   const [blackouts, setBlackouts] = useState<ScheduleBlackout[]>([]);
+  const [teamAvailability, setTeamAvailability] = useState<Pick<TeamAvailability, "team_id" | "dia_semana" | "hora_inicio" | "hora_fin">[]>([]);
+  const [teamUnavailability, setTeamUnavailability] = useState<Pick<TeamUnavailability, "team_id" | "start_date" | "end_date">[]>([]);
   const [selectedGridDay, setSelectedGridDay] = useState("");
   const [showBlackouts, setShowBlackouts] = useState(false);
   const [courtName, setCourtName] = useState("");
@@ -134,7 +136,7 @@ export function TournamentManage() {
 
     if (cats && cats.length > 0) {
       const categoryIds = cats.map((c) => c.id);
-      const [{ data: allT }, { data: allM }, { data: unschedM }] = await Promise.all([
+      const [{ data: allT }, { data: allM }, { data: unschedM }, { data: avail }, { data: unavail }] = await Promise.all([
         supabase.from("teams").select("*").in("category_id", categoryIds),
         supabase.from("matches").select("*").in("category_id", categoryIds).not("scheduled_at", "is", null),
         supabase
@@ -146,10 +148,14 @@ export function TournamentManage() {
           .not("team1_id", "is", null)
           .not("team2_id", "is", null)
           .or("scheduled_at.is.null,court_id.is.null"),
+        supabase.from("team_availability").select("team_id, dia_semana, hora_inicio, hora_fin, teams!inner(category_id)").in("teams.category_id", categoryIds),
+        supabase.from("team_unavailability").select("team_id, start_date, end_date, teams!inner(category_id)").in("teams.category_id", categoryIds),
       ]);
       setAllTeams(allT ?? []);
       setAllMatches((allM as Match[]) ?? []);
       setUnscheduledMatches((unschedM as Match[]) ?? []);
+      setTeamAvailability(avail ?? []);
+      setTeamUnavailability(unavail ?? []);
       const dates = [...new Set((allM ?? []).map((m) => localDateStr(m.scheduled_at as string)))].sort();
       const today = todayStr();
       setSelectedGridDay((prev) => prev || dates.find((d) => d >= today) || dates[0] || "");
@@ -940,6 +946,9 @@ export function TournamentManage() {
             onSlotChange={(match, patch) => updateMatchSlot(match, { court_id: patch.courtId, scheduled_at: patch.iso })}
             onCancelTurn={handleCancelTurn}
             onSwapOpponent={(match, otherMatch) => updateMatchSlot(match, { court_id: otherMatch.court_id, scheduled_at: otherMatch.scheduled_at })}
+            teamAvailability={teamAvailability}
+            teamUnavailability={teamUnavailability}
+            matchDurationMinutes={Math.max(15, tournament?.default_match_minutes ?? 60)}
           />
         </Card>
       )}
