@@ -13,32 +13,19 @@ import { DailyFixtureStory } from "@/components/DailyFixtureStory";
 import { Select, Spinner } from "@/components/ui";
 
 /**
- * Para el público solo se ve una semana de la grilla diaria a la vez, en vez de todo el
- * torneo de una — la semana "activa" es la de hoy (o la primera que tenga partidos, si hoy
- * cae en una semana sin nada). Un día antes de que termine esa semana (el día antes del
- * último día con partidos de esa semana — para una liga lunes a viernes, eso es el jueves)
- * ya se habilita también la semana siguiente, para que la gente pueda ir mirando con
- * anticipación. Las semanas ya jugadas quedan siempre visibles.
+ * Para el público no se ve todo el calendario de una -- los días ya jugados quedan siempre
+ * visibles (para poder consultar resultados viejos), pero de los que todavía no llegaron
+ * solo se muestran los próximos 5 contando hoy. Al otro día, ese día que recién terminó pasa
+ * a ser "ya jugado" (sigue visible) y se destapa un día más adelante -- la ventana de 5 días
+ * siempre va corriendo sola, sin que haga falta tocar nada.
  */
-function computeVisibleDays(availableDays: string[], startDate: string | null, todayIso: string): string[] {
-  if (availableDays.length === 0 || !startDate) return availableDays;
-  const [sy, sm, sd] = startDate.split("-").map(Number);
-  const start = new Date(sy, sm - 1, sd);
+function computeVisibleDays(availableDays: string[], todayIso: string): string[] {
+  if (availableDays.length === 0) return availableDays;
+  const [ty, tm, td] = todayIso.split("-").map(Number);
+  const cutoff = new Date(ty, tm - 1, td);
+  cutoff.setDate(cutoff.getDate() + 4); // hoy + 4 días más = 5 en total, contando hoy
   const toDate = (s: string) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
-  const weekIndexOf = (s: string) => Math.floor((toDate(s).getTime() - start.getTime()) / 86400000 / 7);
-
-  const todayWeek = Math.max(0, weekIndexOf(todayIso));
-  const weeksWithDays = [...new Set(availableDays.map(weekIndexOf))].sort((a, b) => a - b);
-  const activeWeek = weeksWithDays.find((w) => w >= todayWeek) ?? weeksWithDays[weeksWithDays.length - 1];
-
-  const currentWeekDays = availableDays.filter((d) => weekIndexOf(d) === activeWeek);
-  let maxRevealedWeek = activeWeek;
-  const lastOfCurrent = currentWeekDays[currentWeekDays.length - 1];
-  if (lastOfCurrent) {
-    const unlockDate = new Date(toDate(lastOfCurrent).getTime() - 86400000);
-    if (toDate(todayIso) >= unlockDate) maxRevealedWeek = activeWeek + 1;
-  }
-  return availableDays.filter((d) => weekIndexOf(d) <= maxRevealedWeek);
+  return availableDays.filter((d) => toDate(d) <= cutoff);
 }
 
 export function TournamentDetail() {
@@ -84,7 +71,7 @@ export function TournamentDetail() {
           setAllMatches((allM as Match[]) ?? []);
           const allDates = [...new Set((allM ?? []).map((m) => localDateStr(m.scheduled_at as string)))].sort();
           const today = todayStr();
-          const dates = computeVisibleDays(allDates, t.start_date, today);
+          const dates = computeVisibleDays(allDates, today);
           const preferred = dates.find((d) => d >= today) ?? dates[0];
           if (preferred) setSelectedDay(preferred);
         }
@@ -114,9 +101,8 @@ export function TournamentDetail() {
   const categoriesById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories]);
   const availableDays = useMemo(() => {
     const allDays = [...new Set(allMatches.map((m) => localDateStr(m.scheduled_at as string)))].sort();
-    return computeVisibleDays(allDays, tournament?.start_date ?? null, todayStr());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allMatches, tournament?.start_date]);
+    return computeVisibleDays(allDays, todayStr());
+  }, [allMatches]);
 
   if (tournament === undefined) {
     return (
