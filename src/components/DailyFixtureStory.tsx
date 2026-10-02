@@ -59,7 +59,9 @@ type SwapOption = { matchId: string; label: string };
  * Solo se ofrecen los intercambios que no le rompan la disponibilidad cargada a NINGUNA de
  * las dos parejas que cambian de horario (el equipo fijo no se mueve, así que el suyo no
  * hace falta chequearlo de nuevo acá): la pareja que sale de este partido tiene que poder
- * jugar en el horario nuevo, y la que entra tiene que poder jugar en este horario.
+ * jugar en el horario nuevo, y la que entra tiene que poder jugar en este horario. No hace
+ * falta que cada pareja juegue un solo partido por día -- si les toca dos el mismo día no
+ * pasa nada.
  */
 function swapOptions(
   match: Match,
