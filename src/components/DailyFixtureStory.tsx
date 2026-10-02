@@ -46,7 +46,9 @@ function splitPlayers(teamName: string): string[] {
   return teamName.split("/").map((p) => p.trim()).filter(Boolean);
 }
 
-const RESULT_BACKGROUND_ARTIFACT_URL = "https://claude.ai/artifact/1bViCE9t2BJZwPhxSRk6dh";
+// Página estática propia (public/resultado.html) -- no un artifact externo de claude.ai, así
+// no hace falta estar logueado ahí ni depender de un link aparte.
+const RESULT_BACKGROUND_PAGE_URL = "/resultado.html";
 
 /** Zonas y liga en celeste, cruces (octavos/cuartos/semis) en verde, la final en dorado --
  * así se distingue de un vistazo en qué instancia se jugó. La liga no tiene cruces ni final,
@@ -72,7 +74,7 @@ function resultBackgroundUrl(match: Match, category: string | undefined, team1: 
     foot: tournamentName,
     theme: resultBackgroundTheme(match),
   });
-  return `${RESULT_BACKGROUND_ARTIFACT_URL}?${params.toString()}`;
+  return `${RESULT_BACKGROUND_PAGE_URL}?${params.toString()}`;
 }
 
 type SwapOption = { matchId: string; label: string };
