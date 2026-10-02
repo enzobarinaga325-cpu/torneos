@@ -45,6 +45,40 @@ function splitPlayers(teamName: string): string[] {
   return teamName.split("/").map((p) => p.trim()).filter(Boolean);
 }
 
+type SwapOption = { matchId: string; label: string };
+
+/**
+ * Para un partido puntual y uno de sus dos equipos (`fixedTeamId`, el que se mantiene fijo),
+ * busca los demás partidos todavía no jugados de ESE equipo dentro del mismo grupo
+ * (categoría + zona + stage) -- cada uno es candidato a "intercambiar lugar": el rival de
+ * ese otro partido pasa a jugar en el horario de este, y viceversa. Así el admin elige el
+ * rival nuevo por nombre en vez de tener que ir a buscar manualmente la fecha del otro
+ * partido para moverlo.
+ */
+function swapOptions(match: Match, fixedTeamId: string | null, matches: Match[], teamsById: Record<string, Team>): SwapOption[] {
+  if (!fixedTeamId) return [];
+  return matches
+    .filter((m) =>
+      m.id !== match.id &&
+      m.winner_id == null &&
+      m.scheduled_at != null &&
+      m.court_id != null &&
+      m.category_id === match.category_id &&
+      m.zone_id === match.zone_id &&
+      m.stage === match.stage &&
+      (m.team1_id === fixedTeamId || m.team2_id === fixedTeamId),
+    )
+    .map((m) => {
+      const opponentId = m.team1_id === fixedTeamId ? m.team2_id : m.team1_id;
+      const opponentName = opponentId ? teamsById[opponentId]?.name : null;
+      if (!opponentName) return null;
+      const when = `${localDateStr(m.scheduled_at as string)} ${timeLabel(m.scheduled_at as string)}hs`;
+      return { matchId: m.id, label: `${opponentName} (${when})` };
+    })
+    .filter((o): o is SwapOption => o != null)
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
 /** Rosa para categorías de damas, celeste para caballeros -- gris para cualquier otro caso. */
 function categoryColor(name?: string): string {
   if (!name) return "#96A2BC";
@@ -56,6 +90,7 @@ function categoryColor(name?: string): string {
 
 function MatchCell({
   match, category, team1, team2, courts, editable, onSaveResult, onSlotChange, onCancelTurn,
+  allMatches, teamsById, onSwapOpponent,
 }: {
   match: Match;
   category?: string;
@@ -66,6 +101,9 @@ function MatchCell({
   onSaveResult?: (m: Match, sets: SetsDraft) => void;
   onSlotChange?: (m: Match, patch: { courtId: string | null; iso: string | null }) => void;
   onCancelTurn?: (m: Match) => void;
+  allMatches?: Match[];
+  teamsById?: Record<string, Team>;
+  onSwapOpponent?: (m: Match, otherMatch: Match) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [sets, setSets] = useState<SetsDraft>({
@@ -82,6 +120,21 @@ function MatchCell({
   const winner = matchWinner(match);
   const score = scoreLine(match);
   const catColor = categoryColor(category);
+
+  // Rivales con los que se puede intercambiar: dejando fijo UN equipo, el otro lado de este
+  // partido pasa a jugar en el horario de ese otro partido (y el rival de ese otro partido
+  // termina acá) -- así el admin cambia el rival eligiendo un nombre, sin ir a buscar la
+  // fecha a mano.
+  const canSwap = Boolean(editable && allMatches && teamsById && onSwapOpponent);
+  // team1 queda fijo -- estas son las parejas que podrían pasar a jugar en el lugar de team2.
+  const optionsToReplaceTeam2 = canSwap ? swapOptions(match, match.team1_id, allMatches!, teamsById!) : [];
+  // team2 queda fijo -- estas son las parejas que podrían pasar a jugar en el lugar de team1.
+  const optionsToReplaceTeam1 = canSwap ? swapOptions(match, match.team2_id, allMatches!, teamsById!) : [];
+
+  function swap(matchId: string) {
+    const other = allMatches?.find((m) => m.id === matchId);
+    if (other) onSwapOpponent?.(match, other);
+  }
 
   function openEditing() {
     setDraftCourtId(match.court_id ?? "");
@@ -171,6 +224,42 @@ function MatchCell({
               Confirmar cambio
             </Button>
           </div>
+
+          {canSwap && !winner && (optionsToReplaceTeam1.length > 0 || optionsToReplaceTeam2.length > 0) && (
+            // Si una pareja no puede jugar este turno, en vez de mover el partido a mano se
+            // elige quién la reemplaza acá -- el partido que esa pareja nueva tenía agendado
+            // se intercambia de lugar con este (nadie se queda sin horario, nadie se pierde
+            // un turno libre).
+            <div className="flex flex-col gap-1.5 border-t border-zinc-200 pt-2">
+              {optionsToReplaceTeam1.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="shrink-0 text-[10px] text-zinc-500">{team1} no puede, que juegue:</span>
+                  <Select
+                    value=""
+                    onChange={(e) => e.target.value && swap(e.target.value)}
+                    className="min-w-0 flex-1 py-1 text-xs"
+                  >
+                    <option value="">elegir pareja</option>
+                    {optionsToReplaceTeam1.map((o) => <option key={o.matchId} value={o.matchId}>{o.label}</option>)}
+                  </Select>
+                </div>
+              )}
+              {optionsToReplaceTeam2.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="shrink-0 text-[10px] text-zinc-500">{team2} no puede, que juegue:</span>
+                  <Select
+                    value=""
+                    onChange={(e) => e.target.value && swap(e.target.value)}
+                    className="min-w-0 flex-1 py-1 text-xs"
+                  >
+                    <option value="">elegir pareja</option>
+                    {optionsToReplaceTeam2.map((o) => <option key={o.matchId} value={o.matchId}>{o.label}</option>)}
+                  </Select>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-2">
             {(["set1", "set2", "set3"] as const).map((s) => (
               <div key={s} className="flex items-center gap-1">
@@ -223,6 +312,7 @@ export function DailyFixtureStory({
   onSaveResult,
   onSlotChange,
   onCancelTurn,
+  onSwapOpponent,
   showDownload = true,
 }: {
   tournamentName: string;
@@ -236,6 +326,7 @@ export function DailyFixtureStory({
   onSaveResult?: (m: Match, sets: SetsDraft) => void;
   onSlotChange?: (m: Match, patch: { courtId: string | null; iso: string | null }) => void;
   onCancelTurn?: (m: Match) => void;
+  onSwapOpponent?: (m: Match, otherMatch: Match) => void;
   showDownload?: boolean;
 }) {
   const { headerRef, contentRef, footerRef, download, downloading } = useStoryDownload(fileName, {
@@ -336,6 +427,9 @@ export function DailyFixtureStory({
                               onSaveResult={onSaveResult}
                               onSlotChange={onSlotChange}
                               onCancelTurn={onCancelTurn}
+                              allMatches={matches}
+                              teamsById={teamsById}
+                              onSwapOpponent={onSwapOpponent}
                             />
                           ) : (
                             <p className="pl-[13px] text-[10px] font-medium" style={{ color: "#96A2BC" }}>Libre</p>

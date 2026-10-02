@@ -99,6 +99,7 @@ export function TournamentManage() {
   const [leagueSlots, setLeagueSlots] = useState<LeagueSlot[]>([]);
   const [blackouts, setBlackouts] = useState<ScheduleBlackout[]>([]);
   const [selectedGridDay, setSelectedGridDay] = useState("");
+  const [showBlackouts, setShowBlackouts] = useState(false);
   const [courtName, setCourtName] = useState("");
   const [categoryName, setCategoryName] = useState("");
   const [matchMinutes, setMatchMinutes] = useState("60");
@@ -898,17 +899,31 @@ export function TournamentManage() {
           </div>
 
           {blackouts.length > 0 && (
-            <div className="mb-3 flex flex-wrap gap-2">
-              {blackouts.map((b) => (
-                <span key={b.id} className="flex items-center gap-1.5 rounded-full bg-red-50 py-1 pl-3 pr-1.5 text-xs font-medium text-red-700">
-                  {b.date}
-                  {b.court_id ? ` · ${courts.find((c) => c.id === b.court_id)?.name ?? "cancha borrada"}` : " · todas las canchas"}
-                  {b.hora_inicio ? ` · ${b.hora_inicio.slice(0, 5)}hs` : " · todo el día"}
-                  <button onClick={() => handleRemoveBlackout(b.id)} className="rounded-full p-0.5 hover:bg-red-100" aria-label="Quitar cancelación">
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              ))}
+            // Oculta por defecto -- los días/turnos cancelados ya no aparecen agendados en
+            // ningún lado (el partido se reacomoda solo), así que mostrar esta lista siempre
+            // era puro ruido visual. Queda a un clic por si hace falta deshacer alguna.
+            <div className="mb-3">
+              <button
+                onClick={() => setShowBlackouts((v) => !v)}
+                className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-700"
+              >
+                {showBlackouts ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                Turnos cancelados ({blackouts.length})
+              </button>
+              {showBlackouts && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {blackouts.map((b) => (
+                    <span key={b.id} className="flex items-center gap-1.5 rounded-full bg-red-50 py-1 pl-3 pr-1.5 text-xs font-medium text-red-700">
+                      {b.date}
+                      {b.court_id ? ` · ${courts.find((c) => c.id === b.court_id)?.name ?? "cancha borrada"}` : " · todas las canchas"}
+                      {b.hora_inicio ? ` · ${b.hora_inicio.slice(0, 5)}hs` : " · todo el día"}
+                      <button onClick={() => handleRemoveBlackout(b.id)} className="rounded-full p-0.5 hover:bg-red-100" aria-label="Quitar cancelación">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -924,6 +939,7 @@ export function TournamentManage() {
             onSaveResult={saveResult}
             onSlotChange={(match, patch) => updateMatchSlot(match, { court_id: patch.courtId, scheduled_at: patch.iso })}
             onCancelTurn={handleCancelTurn}
+            onSwapOpponent={(match, otherMatch) => updateMatchSlot(match, { court_id: otherMatch.court_id, scheduled_at: otherMatch.scheduled_at })}
           />
         </Card>
       )}
