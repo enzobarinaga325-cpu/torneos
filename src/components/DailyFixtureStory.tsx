@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Ban, Download, Loader2, Pencil } from "lucide-react";
+import { Ban, Download, ImagePlus, Loader2, Pencil } from "lucide-react";
 import type { Category, Court, Match, Team } from "@/lib/types";
 import { useStoryDownload } from "@/lib/useStoryDownload";
 import { useDesignScale } from "@/lib/useDesignScale";
@@ -44,6 +44,35 @@ function scoreLine(m: Match): string {
 /** Un jugador por renglón -- separa "Beta Sosa/ Andrea Garcia" en sus dos nombres. */
 function splitPlayers(teamName: string): string[] {
   return teamName.split("/").map((p) => p.trim()).filter(Boolean);
+}
+
+const RESULT_BACKGROUND_ARTIFACT_URL = "https://claude.ai/artifact/1bViCE9t2BJZwPhxSRk6dh";
+
+/** Zonas y liga en celeste, cruces (octavos/cuartos/semis) en verde, la final en dorado --
+ * así se distingue de un vistazo en qué instancia se jugó. La liga no tiene cruces ni final,
+ * así que todos sus partidos van con el mismo color que una zona. */
+function resultBackgroundTheme(match: Match): "azul" | "verde" | "dorado" {
+  if (match.stage !== "fixture") return "azul";
+  return match.round_name === "Final" ? "dorado" : "verde";
+}
+
+/** Abre el generador de fondos para resultados (historias de Instagram) con la categoría, las
+ * parejas y el resultado ya cargados -- al admin solo le queda subir la foto de los jugadores. */
+function resultBackgroundUrl(match: Match, category: string | undefined, team1: string, team2: string, tournamentName: string): string {
+  const params = new URLSearchParams({
+    cat: category ?? "",
+    p1: team1,
+    p2: team2,
+    s11: match.set1_team1?.toString() ?? "",
+    s21: match.set1_team2?.toString() ?? "",
+    s12: match.set2_team1?.toString() ?? "",
+    s22: match.set2_team2?.toString() ?? "",
+    s13: match.set3_team1?.toString() ?? "",
+    s23: match.set3_team2?.toString() ?? "",
+    foot: tournamentName,
+    theme: resultBackgroundTheme(match),
+  });
+  return `${RESULT_BACKGROUND_ARTIFACT_URL}?${params.toString()}`;
 }
 
 type SwapOption = { matchId: string; label: string };
@@ -118,6 +147,7 @@ function categoryColor(name?: string): string {
 function MatchCell({
   match, category, team1, team2, courts, editable, onSaveResult, onSlotChange, onCancelTurn,
   allMatches, teamsById, onSwapOpponent, teamAvailability, teamUnavailability, matchDurationMinutes,
+  tournamentName,
 }: {
   match: Match;
   category?: string;
@@ -134,6 +164,7 @@ function MatchCell({
   teamAvailability?: Pick<TeamAvailability, "team_id" | "dia_semana" | "hora_inicio" | "hora_fin">[];
   teamUnavailability?: Pick<TeamUnavailability, "team_id" | "start_date" | "end_date">[];
   matchDurationMinutes?: number;
+  tournamentName?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [sets, setSets] = useState<SetsDraft>({
@@ -211,29 +242,41 @@ function MatchCell({
         {splitPlayers(team2).map((p, i) => <p key={i} className="text-[14px]">{p}</p>)}
       </div>
       {score && <p className="mt-0.5 text-[9px] font-medium" style={{ color: "#96A2BC" }}>{score}</p>}
-      {editable && !winner && onCancelTurn && (
-        // Botón directo, sin tener que abrir antes el lápiz -- el "Cancelar turno" que ya
-        // estaba adentro del panel de edición quedaba escondido entre los inputs de sets,
-        // costaba encontrarlo. Este actúa igual (mismo `onCancelTurn`, con su confirm()
-        // desde TournamentManage), solo que es visible siempre.
-        <button
-          data-html2canvas-ignore="true"
-          onClick={() => onCancelTurn(match)}
-          className="absolute right-7 top-1 shrink-0 rounded-md p-1 text-white/40 hover:bg-red-500/20 hover:text-red-300"
-          aria-label={`Cancelar turno ${team1} vs ${team2}`}
-        >
-          <Ban className="h-3.5 w-3.5" />
-        </button>
-      )}
       {editable && (
-        <button
-          data-html2canvas-ignore="true"
-          onClick={() => (editing ? setEditing(false) : openEditing())}
-          className="absolute right-1 top-1 shrink-0 rounded-md p-1 text-white/40 hover:bg-white/10 hover:text-white"
-          aria-label={`Cargar resultado ${team1} vs ${team2}`}
-        >
-          <Pencil className="h-3.5 w-3.5" />
-        </button>
+        <div data-html2canvas-ignore="true" className="absolute right-1 top-1 flex items-center gap-0.5">
+          {!winner && onCancelTurn && (
+            // Botón directo, sin tener que abrir antes el lápiz -- el "Cancelar turno" que ya
+            // estaba adentro del panel de edición quedaba escondido entre los inputs de sets,
+            // costaba encontrarlo. Este actúa igual (mismo `onCancelTurn`, con su confirm()
+            // desde TournamentManage), solo que es visible siempre.
+            <button
+              onClick={() => onCancelTurn(match)}
+              className="shrink-0 rounded-md p-1 text-white/40 hover:bg-red-500/20 hover:text-red-300"
+              aria-label={`Cancelar turno ${team1} vs ${team2}`}
+            >
+              <Ban className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {winner && (
+            // Una vez cargado el resultado, abre el generador de fondos para historias de
+            // Instagram con la categoría, las parejas y el resultado ya cargados -- al admin
+            // solo le queda subir la foto de los jugadores.
+            <button
+              onClick={() => window.open(resultBackgroundUrl(match, category, team1, team2, tournamentName ?? ""), "_blank", "noopener")}
+              className="shrink-0 rounded-md p-1 text-white/40 hover:bg-white/10 hover:text-white"
+              aria-label={`Generar imagen de resultado ${team1} vs ${team2}`}
+            >
+              <ImagePlus className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <button
+            onClick={() => (editing ? setEditing(false) : openEditing())}
+            className="shrink-0 rounded-md p-1 text-white/40 hover:bg-white/10 hover:text-white"
+            aria-label={`Cargar resultado ${team1} vs ${team2}`}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+        </div>
       )}
 
       {editable && editing && (
@@ -472,6 +515,7 @@ export function DailyFixtureStory({
                               teamAvailability={teamAvailability}
                               teamUnavailability={teamUnavailability}
                               matchDurationMinutes={matchDurationMinutes}
+                              tournamentName={tournamentName}
                             />
                           ) : (
                             <p className="pl-[13px] text-[10px] font-medium" style={{ color: "#96A2BC" }}>Libre</p>

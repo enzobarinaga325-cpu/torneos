@@ -59,8 +59,13 @@ export function useDownloadImage(fileName: string) {
       const a = document.createElement("a");
       a.href = url;
       a.download = `${fileName}.png`;
+      // Revocar la URL en la línea siguiente al click corta la lectura del blob a mitad de
+      // camino si el navegador todavía no terminó de guardar el archivo (ver mismo comentario
+      // en useStoryDownload.ts) -- se espera un poco antes de revocar.
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
     } finally {
       setDownloading(false);
     }
