@@ -1,13 +1,13 @@
 import { useState } from "react";
-import { Ban, Download, ImagePlus, Loader2, Pencil } from "lucide-react";
+import { ArrowLeftRight, Ban, Download, ImagePlus, Loader2, Pencil } from "lucide-react";
 import type { Category, Court, Match, Team } from "@/lib/types";
 import { useStoryDownload } from "@/lib/useStoryDownload";
 import { useDesignScale } from "@/lib/useDesignScale";
 import type { TeamAvailability, TeamUnavailability } from "@/lib/types";
 import { localDateStr, toLocalDatetimeInput } from "@/lib/format";
 import { matchWinner } from "@/lib/tournament-logic";
-import { swapOptions } from "@/lib/swap-opponent";
-import type { SwapOption } from "@/lib/swap-opponent";
+import { swapMatchOptions, swapOptions } from "@/lib/swap-opponent";
+import type { SwapMatchOption, SwapOption } from "@/lib/swap-opponent";
 import { Button, Select } from "./ui";
 import ordenDeJuegoBackground from "@/assets/orden-de-juego-background.jpg";
 
@@ -93,10 +93,18 @@ function swapLabel(o: SwapOption): string {
   return `${o.opponentName} (${localDateStr(o.scheduledAt)} ${timeLabel(o.scheduledAt)}hs)`;
 }
 
+/** "A/B vs C/D · Categoría (2026-10-09 19:00hs)" -- el partido con el que se cambiaría de lugar. */
+function swapMatchLabel(o: SwapMatchOption, teamsById: Record<string, Team>, categoriesById: Record<string, Category>): string {
+  const m = o.match;
+  const name = (id: string | null) => (id ? teamsById[id]?.name : null) ?? "?";
+  const cat = categoriesById[m.category_id]?.name;
+  return `${name(m.team1_id)} vs ${name(m.team2_id)}${cat ? ` · ${cat}` : ""} (${localDateStr(o.scheduledAt)} ${timeLabel(o.scheduledAt)}hs)`;
+}
+
 function MatchCell({
   match, category, team1, team2, courts, editable, onSaveResult, onSlotChange, onCancelTurn,
   allMatches, teamsById, onSwapOpponent, teamAvailability, teamUnavailability, matchDurationMinutes,
-  tournamentName,
+  tournamentName, categoriesById,
 }: {
   match: Match;
   category?: string;
@@ -114,8 +122,10 @@ function MatchCell({
   teamUnavailability?: Pick<TeamUnavailability, "team_id" | "start_date" | "end_date">[];
   matchDurationMinutes?: number;
   tournamentName?: string;
+  categoriesById?: Record<string, Category>;
 }) {
   const [editing, setEditing] = useState(false);
+  const [swappingWhole, setSwappingWhole] = useState(false);
   const [sets, setSets] = useState<SetsDraft>({
     set1_team1: match.set1_team1, set1_team2: match.set1_team2,
     set2_team1: match.set2_team1, set2_team2: match.set2_team2,
@@ -143,6 +153,15 @@ function MatchCell({
   const optionsToReplaceTeam2 = canSwap ? swapOptions(match, match.team1_id, allMatches!, teamsById!, duration, avail, unavail) : [];
   // team2 queda fijo -- estas son las parejas que podrían pasar a jugar en el lugar de team1.
   const optionsToReplaceTeam1 = canSwap ? swapOptions(match, match.team2_id, allMatches!, teamsById!, duration, avail, unavail) : [];
+
+  // Opciones para cambiar este partido ENTERO de lugar con otro (solo se calcula con el panel abierto).
+  const wholeMatchOptions = canSwap && swappingWhole ? swapMatchOptions(match, allMatches!, duration, avail, unavail) : [];
+
+  function swapWhole(matchId: string) {
+    const other = allMatches?.find((m) => m.id === matchId);
+    if (other) onSwapOpponent?.(match, other);
+    setSwappingWhole(false);
+  }
 
   function swap(matchId: string) {
     const other = allMatches?.find((m) => m.id === matchId);
@@ -218,6 +237,15 @@ function MatchCell({
               <ImagePlus className="h-3.5 w-3.5" />
             </button>
           )}
+          {canSwap && !winner && (
+            <button
+              onClick={() => setSwappingWhole((v) => !v)}
+              className="shrink-0 rounded-md p-1 text-white/40 hover:bg-white/10 hover:text-white"
+              aria-label={`Cambiar partido completo ${team1} vs ${team2}`}
+            >
+              <ArrowLeftRight className="h-3.5 w-3.5" />
+            </button>
+          )}
           <button
             onClick={() => (editing ? setEditing(false) : openEditing())}
             className="shrink-0 rounded-md p-1 text-white/40 hover:bg-white/10 hover:text-white"
@@ -225,6 +253,22 @@ function MatchCell({
           >
             <Pencil className="h-3.5 w-3.5" />
           </button>
+        </div>
+      )}
+
+      {canSwap && !winner && swappingWhole && (
+        // Cambia ESTE partido completo (las dos parejas) de lugar con otro: solo aparecen los que
+        // le sirven a las cuatro parejas por horario y fechas, y sin que ninguna juegue 2 el mismo día.
+        <div data-html2canvas-ignore="true" className="mt-1.5 flex flex-col gap-1.5 rounded-lg bg-zinc-50 p-2">
+          <span className="text-[10px] text-zinc-500">Cambiar este partido de lugar con:</span>
+          {wholeMatchOptions.length > 0 ? (
+            <Select value="" onChange={(e) => e.target.value && swapWhole(e.target.value)} className="min-w-0 py-1 text-xs">
+              <option value="">elegir partido</option>
+              {wholeMatchOptions.map((o) => <option key={o.matchId} value={o.matchId}>{swapMatchLabel(o, teamsById!, categoriesById ?? {})}</option>)}
+            </Select>
+          ) : (
+            <p className="text-[10px] text-zinc-500">No hay ningún partido con el que se pueda cambiar sin romper horarios ni repetir día.</p>
+          )}
         </div>
       )}
 
@@ -465,6 +509,7 @@ export function DailyFixtureStory({
                               teamUnavailability={teamUnavailability}
                               matchDurationMinutes={matchDurationMinutes}
                               tournamentName={tournamentName}
+                              categoriesById={categoriesById}
                             />
                           ) : (
                             <p className="pl-[13px] text-[10px] font-medium" style={{ color: "#96A2BC" }}>Libre</p>
