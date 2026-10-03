@@ -5,7 +5,9 @@ import { useStoryDownload } from "@/lib/useStoryDownload";
 import { useDesignScale } from "@/lib/useDesignScale";
 import type { TeamAvailability, TeamUnavailability } from "@/lib/types";
 import { localDateStr, toLocalDatetimeInput } from "@/lib/format";
-import { isTeamAvailable, isTeamAvailableOnDate, matchWinner } from "@/lib/tournament-logic";
+import { matchWinner } from "@/lib/tournament-logic";
+import { swapOptions } from "@/lib/swap-opponent";
+import type { SwapOption } from "@/lib/swap-opponent";
 import { Button, Select } from "./ui";
 import ordenDeJuegoBackground from "@/assets/orden-de-juego-background.jpg";
 
@@ -77,66 +79,6 @@ function resultBackgroundUrl(match: Match, category: string | undefined, team1: 
   return `${RESULT_BACKGROUND_PAGE_URL}?${params.toString()}`;
 }
 
-type SwapOption = { matchId: string; label: string };
-
-/**
- * Para un partido puntual y uno de sus dos equipos (`fixedTeamId`, el que se mantiene fijo),
- * busca los demás partidos todavía no jugados de ESE equipo dentro del mismo grupo
- * (categoría + zona + stage) -- cada uno es candidato a "intercambiar lugar": el rival de
- * ese otro partido pasa a jugar en el horario de este, y viceversa. Así el admin elige el
- * rival nuevo por nombre en vez de tener que ir a buscar manualmente la fecha del otro
- * partido para moverlo.
- *
- * Solo se ofrecen los intercambios que no le rompan la disponibilidad cargada a NINGUNA de
- * las dos parejas que cambian de horario (el equipo fijo no se mueve, así que el suyo no
- * hace falta chequearlo de nuevo acá): la pareja que sale de este partido tiene que poder
- * jugar en el horario nuevo, y la que entra tiene que poder jugar en este horario. No hace
- * falta que cada pareja juegue un solo partido por día -- si les toca dos el mismo día no
- * pasa nada.
- */
-function swapOptions(
-  match: Match,
-  fixedTeamId: string | null,
-  matches: Match[],
-  teamsById: Record<string, Team>,
-  duration: number,
-  availability: Pick<TeamAvailability, "team_id" | "dia_semana" | "hora_inicio" | "hora_fin">[],
-  unavailability: Pick<TeamUnavailability, "team_id" | "start_date" | "end_date">[],
-): SwapOption[] {
-  if (!fixedTeamId || !match.scheduled_at) return [];
-  const movingTeamId = match.team1_id === fixedTeamId ? match.team2_id : match.team1_id;
-  return matches
-    .filter((m) =>
-      m.id !== match.id &&
-      m.winner_id == null &&
-      m.scheduled_at != null &&
-      m.court_id != null &&
-      m.category_id === match.category_id &&
-      m.zone_id === match.zone_id &&
-      m.stage === match.stage &&
-      (m.team1_id === fixedTeamId || m.team2_id === fixedTeamId),
-    )
-    .map((m) => {
-      const opponentId = m.team1_id === fixedTeamId ? m.team2_id : m.team1_id;
-      const opponentName = opponentId ? teamsById[opponentId]?.name : null;
-      if (!opponentName) return null;
-      const newSlotForMoving = m.scheduled_at as string;
-      const newSlotForOpponent = match.scheduled_at as string;
-      if (movingTeamId) {
-        if (!isTeamAvailable(availability, movingTeamId, newSlotForMoving, duration)) return null;
-        if (!isTeamAvailableOnDate(unavailability, movingTeamId, newSlotForMoving)) return null;
-      }
-      if (opponentId) {
-        if (!isTeamAvailable(availability, opponentId, newSlotForOpponent, duration)) return null;
-        if (!isTeamAvailableOnDate(unavailability, opponentId, newSlotForOpponent)) return null;
-      }
-      const when = `${localDateStr(m.scheduled_at as string)} ${timeLabel(m.scheduled_at as string)}hs`;
-      return { matchId: m.id, label: `${opponentName} (${when})` };
-    })
-    .filter((o): o is SwapOption => o != null)
-    .sort((a, b) => a.label.localeCompare(b.label));
-}
-
 /** Rosa para categorías de damas, celeste para caballeros -- gris para cualquier otro caso. */
 function categoryColor(name?: string): string {
   if (!name) return "#96A2BC";
@@ -144,6 +86,11 @@ function categoryColor(name?: string): string {
   if (n.includes("dama")) return "#FF96B9";
   if (n.includes("caballero")) return "#78A8FF";
   return "#96A2BC";
+}
+
+/** "Nombre de la pareja (2026-10-09 19:00hs)" -- así se ve en qué horario jugaría la nueva pareja hoy. */
+function swapLabel(o: SwapOption): string {
+  return `${o.opponentName} (${localDateStr(o.scheduledAt)} ${timeLabel(o.scheduledAt)}hs)`;
 }
 
 function MatchCell({
@@ -318,7 +265,7 @@ function MatchCell({
                     className="min-w-0 flex-1 py-1 text-xs"
                   >
                     <option value="">elegir pareja</option>
-                    {optionsToReplaceTeam1.map((o) => <option key={o.matchId} value={o.matchId}>{o.label}</option>)}
+                    {optionsToReplaceTeam1.map((o) => <option key={o.matchId} value={o.matchId}>{swapLabel(o)}</option>)}
                   </Select>
                 </div>
               )}
@@ -331,7 +278,7 @@ function MatchCell({
                     className="min-w-0 flex-1 py-1 text-xs"
                   >
                     <option value="">elegir pareja</option>
-                    {optionsToReplaceTeam2.map((o) => <option key={o.matchId} value={o.matchId}>{o.label}</option>)}
+                    {optionsToReplaceTeam2.map((o) => <option key={o.matchId} value={o.matchId}>{swapLabel(o)}</option>)}
                   </Select>
                 </div>
               )}
