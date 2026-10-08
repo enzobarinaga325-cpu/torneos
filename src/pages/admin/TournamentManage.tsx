@@ -524,15 +524,15 @@ export function TournamentManage() {
   }
 
   /** Cancela TODO el día elegido en la grilla (todas las canchas) — por lluvia, por ejemplo.
-   *  Los partidos que tenía agendados no se pierden: vuelven al pool y "Autocompletar
-   *  horarios" los reacomoda solo en el próximo turno libre. */
+   *  Los partidos que tenía agendados no se pierden: se reacomodan solos a partir de dentro
+   *  de 2 días (ver lib/visible-days.ts). */
   function handleCancelDay() {
     if (!selectedGridDay) return;
     setDangerInput("");
     setPendingDanger({
       title: `Cancelar el día ${selectedGridDay}`,
       description:
-        "Se cancela TODO ese día (todas las canchas) para siempre: nunca más se va a agendar ningún partido ahí. Los partidos que tenía agendados no se pierden, se reacomodan solos en los próximos turnos libres.",
+        "Se cancela TODO ese día (todas las canchas) para siempre: nunca más se va a agendar ningún partido ahí. Los partidos que tenía agendados no se pierden: se reacomodan solos, pero recién a partir de dentro de 2 días (hoy y mañana no se tocan, para no cambiar lo que el público ya ve).",
       confirmWord: "CANCELAR",
       run: runCancelDay,
     });
@@ -551,7 +551,7 @@ export function TournamentManage() {
 
   /** Cancela un partido puntual (esa cancha, ese horario exacto) — el resto del día sigue. */
   async function handleCancelTurn(match: Match) {
-    if (!confirm("¿Cancelar este turno? El partido no se pierde: se va a reacomodar solo en el próximo turno libre.")) return;
+    if (!confirm("¿Cancelar este turno? El partido no se pierde: se va a reacomodar solo, pero recién a partir de dentro de 2 días (hoy y mañana no se tocan).")) return;
     setError(null);
     const result = await cancelTurn(id!, match);
     reportCancelResult(result);

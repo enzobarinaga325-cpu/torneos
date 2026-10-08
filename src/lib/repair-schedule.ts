@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import { buildDayTimeSlots, isBlackedOut, isTeamAvailable, isTeamAvailableOnDate, slotKey } from "./tournament-logic";
 import { localDayKey, projectLeagueSlots } from "./league-logic";
+import { localDateStr } from "./format";
 
 export interface RepairResult {
   repaired: number;
@@ -34,8 +35,18 @@ type RepairMatch = {
  * libre. Un partido manualmente movido por el admin (`auto_scheduled: false`) o ya jugado
  * nunca se toca, ni siquiera como parte de un intercambio. Si ni intercambio ni turno libre
  * aparecen, el partido queda sin agendar (se cuenta en `unscheduled`) en vez de forzarlo.
+ *
+ * `options.notBefore` ("YYYY-MM-DD"): ningún turno anterior a ese día se usa como destino, ni
+ * libre ni de intercambio. Se usa al suspender un día o un partido para reacomodarlo recién
+ * después de los días que el público ya ve, sin mover nada de esos días. Como el turno que
+ * deja el partido suspendido también queda fuera de la ventana, NO se lo regala por
+ * intercambio a otro partido: ese hueco queda vacío.
  */
-export async function repairMatches(tournamentId: string, matchIds: string[]): Promise<RepairResult> {
+export async function repairMatches(
+  tournamentId: string,
+  matchIds: string[],
+  options: { notBefore?: string } = {},
+): Promise<RepairResult> {
   if (matchIds.length === 0) return { repaired: 0, unscheduled: 0 };
 
   const [{ data: tournament }, { data: courts }, { data: days }, { data: leagueSlots }, { data: blackouts }, { data: categories }] =
@@ -132,15 +143,18 @@ export async function repairMatches(tournamentId: string, matchIds: string[]): P
 
   // Candidatos de torneo: cada horario de los días cargados, cruzado con cada cancha.
   const tournamentSlots = buildDayTimeSlots((days ?? []) as { date: string; start_time: string; end_time: string }[], duration);
+  const allowedDay = (iso: string) => !options.notBefore || localDateStr(iso) >= options.notBefore;
   const tournamentCandidates: { courtId: string; iso: string }[] = [];
-  for (const iso of tournamentSlots) for (const courtId of courtIds) tournamentCandidates.push({ courtId, iso });
+  for (const iso of tournamentSlots) if (allowedDay(iso)) for (const courtId of courtIds) tournamentCandidates.push({ courtId, iso });
 
   // Candidatos de liga: se proyectan bastantes semanas — como acá solo hay que ubicar un
   // puñado de partidos puntuales (no todo el fixture), alcanza con una ventana generosa fija
   // en vez de calcularla en base a cuánto falta agendar.
   const leagueCandidates =
     leagueSlots && leagueSlots.length > 0 && tournament?.start_date
-      ? projectLeagueSlots(leagueSlots, tournament.start_date, 16, duration).map((o) => ({ courtId: o.courtId, iso: o.date.toISOString() }))
+      ? projectLeagueSlots(leagueSlots, tournament.start_date, 16, duration)
+        .map((o) => ({ courtId: o.courtId, iso: o.date.toISOString() }))
+        .filter((c) => allowedDay(c.iso))
       : [];
 
   /** ¿Puede `teamId` jugar en `iso` sin cruzarse con otro partido, sin superar un partido

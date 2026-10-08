@@ -160,3 +160,86 @@ describe("repairMatches", () => {
     });
   });
 });
+
+describe("repairMatches con notBefore (reacomodar después de los días visibles)", () => {
+  const MONDAYS = [{ court_id: COURT, dia_semana: 1, hora_inicio: "19:00:00", hora_fin: "21:00:00" }]; // lunes 19 y 20hs
+
+  it("no usa ningún turno anterior a la fecha, aunque haya uno libre antes", () => {
+    current = createSupabaseMock(baseFixtures({
+      horarios_liga: MONDAYS,
+      matches: [ligaMatch({ id: "mX", team1_id: "X1", team2_id: "X2", scheduled_at: "2026-10-05T22:00:00.000Z" })], // lunes 5, 19hs
+    }));
+
+    return repairMatches(TOURNAMENT_ID, ["mX"], { notBefore: "2026-10-12" }).then((result) => {
+      const [write] = writesFor("mX");
+      expect((write.payload as any).scheduled_at).toBe("2026-10-12T22:00:00.000Z"); // lunes 12, 19hs: el primer turno permitido
+      expect(result).toEqual({ repaired: 1, unscheduled: 0 });
+    });
+  });
+
+  it("sin notBefore sigue usando el turno libre más cercano (comportamiento de siempre)", () => {
+    current = createSupabaseMock(baseFixtures({
+      horarios_liga: MONDAYS,
+      matches: [ligaMatch({ id: "mX", team1_id: "X1", team2_id: "X2", scheduled_at: "2026-10-05T22:00:00.000Z" })],
+    }));
+
+    return repairMatches(TOURNAMENT_ID, ["mX"]).then(() => {
+      const [write] = writesFor("mX");
+      expect(new Date((write.payload as any).scheduled_at).getTime()).toBeLessThan(new Date("2026-10-12T00:00:00.000Z").getTime());
+    });
+  });
+
+  it("no le regala por intercambio a otro partido el turno que queda libre dentro de los días protegidos", () => {
+    // mAB (lunes 5, 19hs) se suspende. Sin notBefore, mCD (lunes 5, 20hs) se cambiaría con él y
+    // pasaría a las 19hs -- moviendo un partido de un día que el público ya ve. Con notBefore el
+    // lunes 5 no se toca: mCD queda quieto y mAB se va a un turno libre desde el 12.
+    current = createSupabaseMock(baseFixtures({
+      horarios_liga: MONDAYS,
+      team_availability: [{ team_id: "A", dia_semana: 1, hora_inicio: "20:00:00", hora_fin: "21:00:00" }],
+      matches: [
+        ligaMatch({ id: "mAB", team1_id: "A", team2_id: "B", scheduled_at: "2026-10-05T22:00:00.000Z" }),
+        ligaMatch({ id: "mCD", team1_id: "C", team2_id: "D", scheduled_at: "2026-10-05T23:00:00.000Z" }),
+      ],
+    }));
+
+    return repairMatches(TOURNAMENT_ID, ["mAB"], { notBefore: "2026-10-06" }).then(() => {
+      expect(writesFor("mCD")).toHaveLength(0);
+      const [abWrite] = writesFor("mAB");
+      expect((abWrite.payload as any).scheduled_at).toBe("2026-10-12T23:00:00.000Z"); // lunes 12, 20hs (la única franja de A)
+    });
+  });
+
+  it("sí intercambia cuando el partido y el turno que deja están fuera de los días protegidos", () => {
+    current = createSupabaseMock(baseFixtures({
+      horarios_liga: MONDAYS,
+      team_availability: [{ team_id: "A", dia_semana: 1, hora_inicio: "20:00:00", hora_fin: "21:00:00" }],
+      matches: [
+        ligaMatch({ id: "mAB", team1_id: "A", team2_id: "B", scheduled_at: "2026-10-12T22:00:00.000Z" }), // lunes 12, 19hs
+        ligaMatch({ id: "mCD", team1_id: "C", team2_id: "D", scheduled_at: "2026-10-12T23:00:00.000Z" }), // lunes 12, 20hs
+      ],
+    }));
+
+    return repairMatches(TOURNAMENT_ID, ["mAB"], { notBefore: "2026-10-06" }).then(() => {
+      const [abWrite] = writesFor("mAB");
+      const [cdWrite] = writesFor("mCD");
+      expect((abWrite.payload as any).scheduled_at).toBe("2026-10-12T23:00:00.000Z");
+      expect((cdWrite.payload as any).scheduled_at).toBe("2026-10-12T22:00:00.000Z");
+    });
+  });
+
+  it("nunca toca un partido de los días protegidos, aunque se esté reacomodando otro", () => {
+    // mKeep está hoy (lunes 5, 19hs) y no se menciona: tiene que quedar exactamente igual.
+    current = createSupabaseMock(baseFixtures({
+      horarios_liga: MONDAYS,
+      matches: [
+        ligaMatch({ id: "mKeep", team1_id: "K1", team2_id: "K2", scheduled_at: "2026-10-05T22:00:00.000Z" }),
+        ligaMatch({ id: "mMove", team1_id: "M1", team2_id: "M2", scheduled_at: "2026-10-05T23:00:00.000Z" }),
+      ],
+    }));
+
+    return repairMatches(TOURNAMENT_ID, ["mMove"], { notBefore: "2026-10-07" }).then(() => {
+      expect(writesFor("mKeep")).toHaveLength(0);
+      expect(writesFor("mMove")).toHaveLength(1);
+    });
+  });
+});

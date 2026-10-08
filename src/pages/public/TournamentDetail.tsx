@@ -6,6 +6,7 @@ import type { Category, Court, Match, Team, Tournament, Zone } from "@/lib/types
 import { formatDateRange, localDateStr, todayStr } from "@/lib/format";
 import { matchWinner } from "@/lib/tournament-logic";
 import { useSiteBackground } from "@/lib/useSiteBackground";
+import { lastVisibleDay } from "@/lib/visible-days";
 import { FixtureBracket } from "@/components/FixtureBracket";
 import { ZonesView } from "@/components/ZonesView";
 import { LeagueStandings } from "@/components/LeagueStandings";
@@ -15,17 +16,13 @@ import { Select, Spinner } from "@/components/ui";
 /**
  * Para el público no se ve todo el calendario de una -- los días ya jugados quedan siempre
  * visibles (para poder consultar resultados viejos), pero de los que todavía no llegaron
- * solo se muestran los próximos 5 contando hoy. Al otro día, ese día que recién terminó pasa
- * a ser "ya jugado" (sigue visible) y se destapa un día más adelante -- la ventana de 5 días
- * siempre va corriendo sola, sin que haga falta tocar nada.
+ * solo se muestran hoy y mañana (ver VISIBLE_DAYS). Al otro día se destapa uno más; la
+ * ventana corre sola, sin que haga falta tocar nada. Los días más adelante son los que se
+ * pueden reacomodar sin que nadie haya visto nada.
  */
 function computeVisibleDays(availableDays: string[], todayIso: string): string[] {
-  if (availableDays.length === 0) return availableDays;
-  const [ty, tm, td] = todayIso.split("-").map(Number);
-  const cutoff = new Date(ty, tm - 1, td);
-  cutoff.setDate(cutoff.getDate() + 4); // hoy + 4 días más = 5 en total, contando hoy
-  const toDate = (s: string) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
-  return availableDays.filter((d) => toDate(d) <= cutoff);
+  const last = lastVisibleDay(todayIso);
+  return availableDays.filter((d) => d <= last);
 }
 
 export function TournamentDetail() {
@@ -231,7 +228,11 @@ export function TournamentDetail() {
                                         {teamsById[m.team2_id ?? ""]?.name ?? "?"}
                                       </span>
                                     </div>
-                                    {m.scheduled_at && (
+                                    {m.scheduled_at && !winner && localDateStr(m.scheduled_at) > lastVisibleDay(todayStr()) && (
+                                      // Más allá de los 2 días visibles todavía no es definitivo: no se muestra el día ni la hora.
+                                      <span className="shrink-0 text-xs text-zinc-400">Horario a confirmar</span>
+                                    )}
+                                    {m.scheduled_at && (winner || localDateStr(m.scheduled_at) <= lastVisibleDay(todayStr())) && (
                                       <span className="shrink-0 font-mono text-xs text-zinc-500">
                                         {new Date(m.scheduled_at).toLocaleString("es-AR", {
                                           weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
