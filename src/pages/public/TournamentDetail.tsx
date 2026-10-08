@@ -6,7 +6,7 @@ import type { Category, Court, Match, Team, Tournament, Zone } from "@/lib/types
 import { formatDateRange, localDateStr, todayStr } from "@/lib/format";
 import { matchWinner } from "@/lib/tournament-logic";
 import { useSiteBackground } from "@/lib/useSiteBackground";
-import { lastVisibleDay } from "@/lib/visible-days";
+import { visibleUpcomingDays } from "@/lib/visible-days";
 import { FixtureBracket } from "@/components/FixtureBracket";
 import { ZonesView } from "@/components/ZonesView";
 import { LeagueStandings } from "@/components/LeagueStandings";
@@ -15,14 +15,14 @@ import { Select, Spinner } from "@/components/ui";
 
 /**
  * Para el público no se ve todo el calendario de una -- los días ya jugados quedan siempre
- * visibles (para poder consultar resultados viejos), pero de los que todavía no llegaron
- * solo se muestran hoy y mañana (ver VISIBLE_DAYS). Al otro día se destapa uno más; la
- * ventana corre sola, sin que haga falta tocar nada. Los días más adelante son los que se
- * pueden reacomodar sin que nadie haya visto nada.
+ * visibles (para poder consultar resultados viejos), pero de los que todavía no llegaron solo
+ * se muestran los próximos 2 días CON PARTIDOS (ver VISIBLE_MATCH_DAYS). Al terminar un día se
+ * destapa el siguiente; la ventana corre sola. Lo que está más adelante es lo que se puede
+ * reacomodar sin que nadie haya visto nada.
  */
 function computeVisibleDays(availableDays: string[], todayIso: string): string[] {
-  const last = lastVisibleDay(todayIso);
-  return availableDays.filter((d) => d <= last);
+  const upcoming = new Set(visibleUpcomingDays(availableDays, todayIso));
+  return availableDays.filter((d) => d < todayIso || upcoming.has(d));
 }
 
 export function TournamentDetail() {
@@ -100,6 +100,7 @@ export function TournamentDetail() {
     const allDays = [...new Set(allMatches.map((m) => localDateStr(m.scheduled_at as string)))].sort();
     return computeVisibleDays(allDays, todayStr());
   }, [allMatches]);
+  const visibleDaySet = useMemo(() => new Set(availableDays), [availableDays]);
 
   if (tournament === undefined) {
     return (
@@ -228,11 +229,11 @@ export function TournamentDetail() {
                                         {teamsById[m.team2_id ?? ""]?.name ?? "?"}
                                       </span>
                                     </div>
-                                    {m.scheduled_at && !winner && localDateStr(m.scheduled_at) > lastVisibleDay(todayStr()) && (
-                                      // Más allá de los 2 días visibles todavía no es definitivo: no se muestra el día ni la hora.
+                                    {m.scheduled_at && !winner && !visibleDaySet.has(localDateStr(m.scheduled_at)) && (
+                                      // Más allá de los próximos 2 días con partidos todavía no es definitivo: no se muestra el día ni la hora.
                                       <span className="shrink-0 text-xs text-zinc-400">Horario a confirmar</span>
                                     )}
-                                    {m.scheduled_at && (winner || localDateStr(m.scheduled_at) <= lastVisibleDay(todayStr())) && (
+                                    {m.scheduled_at && (winner || visibleDaySet.has(localDateStr(m.scheduled_at))) && (
                                       <span className="shrink-0 font-mono text-xs text-zinc-500">
                                         {new Date(m.scheduled_at).toLocaleString("es-AR", {
                                           weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
