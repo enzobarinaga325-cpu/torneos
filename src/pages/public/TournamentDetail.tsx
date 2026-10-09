@@ -16,7 +16,7 @@ import { Select, Spinner } from "@/components/ui";
 /**
  * Para el público no se ve todo el calendario de una -- los días ya jugados quedan siempre
  * visibles (para poder consultar resultados viejos), pero de los que todavía no llegaron solo
- * se muestran los próximos 2 días CON PARTIDOS (ver VISIBLE_MATCH_DAYS). Al terminar un día se
+ * se muestran hoy y los próximos 2 días CON PARTIDOS (ver VISIBLE_MATCH_DAYS). Al terminar un día se
  * destapa el siguiente; la ventana corre sola. Lo que está más adelante es lo que se puede
  * reacomodar sin que nadie haya visto nada.
  */

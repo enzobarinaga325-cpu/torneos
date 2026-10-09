@@ -1,9 +1,10 @@
 import { localDateStr } from "./format";
 
 /**
- * Cuántos DÍAS CON PARTIDOS ve el público de lo que viene (más todos los ya jugados). Cuenta
- * días que de verdad tienen partidos agendados, no días de calendario: si hoy hay partidos,
- * mañana no y pasado sí, ve hoy y pasado. Esos días son los que ya están "armados", y cuando
+ * Cuántos DÍAS CON PARTIDOS ve el público DESPUÉS de hoy (más hoy, si hoy hay partidos, y todos
+ * los ya jugados). Cuenta días que de verdad tienen partidos agendados, no días de calendario:
+ * el sábado y el domingo sin partidos no cuentan. Ej.: hoy viernes con partidos -> ve viernes,
+ * lunes y martes. Esos días son los que ya están "armados", y cuando
  * el admin suspende un día o un partido, lo suspendido se reacomoda recién DESPUÉS de esos
  * (ver `firstRescheduleDay`) -- así nunca se mueve nada que la gente ya vio.
  */
@@ -20,9 +21,14 @@ export function upcomingMatchDays(matchDates: Iterable<string>, today: string): 
   return [...new Set(matchDates)].filter((d) => d >= today).sort();
 }
 
-/** Los próximos días con partidos que el público ve (hoy incluido si tiene partidos). */
+/**
+ * Los días con partidos que el público ve: hoy (si tiene partidos) más los próximos
+ * VISIBLE_MATCH_DAYS días con partidos. Hoy no gasta ninguno de los 2.
+ */
 export function visibleUpcomingDays(matchDates: Iterable<string>, today: string): string[] {
-  return upcomingMatchDays(matchDates, today).slice(0, VISIBLE_MATCH_DAYS);
+  const upcoming = upcomingMatchDays(matchDates, today);
+  const hasToday = upcoming[0] === today;
+  return upcoming.slice(0, VISIBLE_MATCH_DAYS + (hasToday ? 1 : 0));
 }
 
 /**
