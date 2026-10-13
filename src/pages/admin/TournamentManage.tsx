@@ -327,7 +327,7 @@ export function TournamentManage() {
     setPendingDanger({
       title: "Autocompletar horarios",
       description:
-        "Esto vuelve a repartir TODOS los partidos de liga que todavía no se jugaron y que nadie movió a mano (los que sí movió el admin no se tocan). Puede reubicar partidos que ya tenían un horario asignado.",
+        "Esto vuelve a repartir TODOS los partidos de liga que todavía no se jugaron y que nadie movió a mano (los que sí movió el admin no se tocan), buscando que todas las parejas debuten lo antes posible y jueguen lo más seguido posible según sus horarios y días disponibles. Si el torneo ya empezó, hoy y los próximos 2 días con partidos quedan como están (es lo que ve el público) y el resto se reparte después. Puede reubicar partidos que ya tenían un horario asignado. Puede tardar unos segundos.",
       confirmWord: "AGENDAR",
       run: runAutoScheduleLeague,
     });

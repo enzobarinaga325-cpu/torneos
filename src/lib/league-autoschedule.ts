@@ -1,5 +1,8 @@
 import { supabase } from "./supabase";
-import { buildLeagueSchedule, type LeagueMatchInput } from "./league-logic";
+import type { LeagueMatchInput } from "./league-logic";
+import { optimizeLeagueSchedule } from "./league-optimizer";
+import { localDateStr } from "./format";
+import { firstRescheduleDay } from "./visible-days";
 import type { AutoScheduleResult } from "./autoschedule";
 
 /**
@@ -8,7 +11,9 @@ import type { AutoScheduleResult } from "./autoschedule";
  * (`auto_scheduled = true`) — no solo los recién creados — para poder repartir bien las
  * categorías (y, dentro de cada una, sus zonas si tiene) cada vez que se genera o regenera
  * el fixture de una de ellas; nunca toca un partido ya jugado ni uno que el admin movió a
- * mano (eso queda con `auto_scheduled = false`). Requiere que haya al menos una franja
+ * mano (eso queda con `auto_scheduled = false`). El reparto busca que todas las parejas
+ * debuten lo antes posible y después jueguen lo más seguido y parejo posible, dentro de los
+ * horarios y días que tiene disponible cada una (ver `optimizeLeagueSchedule`). Requiere que haya al menos una franja
  * horaria semanal cargada ("horarios_liga") y una fecha de inicio en el torneo.
  */
 export async function autoScheduleLeague(tournamentId: string): Promise<AutoScheduleResult> {
@@ -52,7 +57,7 @@ export async function autoScheduleLeague(tournamentId: string): Promise<AutoSche
     // tenga o no ya un horario puesto por una corrida anterior del auto-agendado.
     supabase
       .from("matches")
-      .select("id, category_id, zone_id, round_order, position, team1_id, team2_id, scheduled_at")
+      .select("id, category_id, zone_id, round_order, position, team1_id, team2_id, scheduled_at, court_id")
       .in("category_id", categoryIds)
       .eq("stage", "liga")
       .eq("auto_scheduled", true)
@@ -62,7 +67,7 @@ export async function autoScheduleLeague(tournamentId: string): Promise<AutoSche
     // Lo ya jugado o movido a mano: se respeta tal cual, solo sirve para no pisarlo.
     supabase
       .from("matches")
-      .select("court_id, scheduled_at, team1_id, team2_id")
+      .select("court_id, scheduled_at, team1_id, team2_id, winner_id")
       .in("category_id", categoryIds)
       .not("scheduled_at", "is", null)
       .or("auto_scheduled.eq.false,winner_id.not.is.null"),
@@ -70,7 +75,29 @@ export async function autoScheduleLeague(tournamentId: string): Promise<AutoSche
 
   if (!replanPool || replanPool.length === 0) return { scheduled: 0, unscheduled: 0 };
 
-  const toReset = replanPool.filter((m) => m.scheduled_at).map((m) => m.id);
+  // Con el torneo ya empezado, lo que ve el público (hoy y los próximos 2 días con partidos) no se
+  // mueve: queda como está y el resto se reparte recién desde el día siguiente.
+  const today = localDateStr(new Date());
+  let pool = replanPool;
+  let lockedMatches = locked ?? [];
+  let earliestDate = today;
+  if (tournament.start_date <= today) {
+    const upcoming = [
+      ...replanPool.filter((m) => m.scheduled_at).map((m) => localDateStr(m.scheduled_at as string)),
+      ...lockedMatches.filter((m) => !m.winner_id && m.scheduled_at).map((m) => localDateStr(m.scheduled_at as string)),
+    ];
+    const from = firstRescheduleDay(upcoming, today);
+    if (from) {
+      const isShown = (m: { scheduled_at: string | null }) => !!m.scheduled_at && localDateStr(m.scheduled_at) >= today && localDateStr(m.scheduled_at) < from;
+      const shown = replanPool.filter(isShown);
+      pool = replanPool.filter((m) => !isShown(m));
+      lockedMatches = [...lockedMatches, ...shown.map((m) => ({ court_id: m.court_id, scheduled_at: m.scheduled_at, team1_id: m.team1_id, team2_id: m.team2_id, winner_id: null }))];
+      earliestDate = from;
+    }
+  }
+  if (pool.length === 0) return { scheduled: 0, unscheduled: 0 };
+
+  const toReset = pool.filter((m) => m.scheduled_at).map((m) => m.id);
   if (toReset.length > 0) {
     await supabase.from("matches").update({ court_id: null, scheduled_at: null }).in("id", toReset);
   }
@@ -78,7 +105,7 @@ export async function autoScheduleLeague(tournamentId: string): Promise<AutoSche
   // Una cola por grupo, cada una en orden de jornada — buildLeagueSchedule va rotando entre
   // grupos al llenar horarios, para que todos vayan jugando a lo largo de la semana en vez
   // de agendar uno entero antes de tocar el siguiente.
-  const pending = replanPool
+  const pending = pool
     .filter((m): m is typeof m & { team1_id: string; team2_id: string } => !!m.team1_id && !!m.team2_id)
     .sort((a, b) => (a.round_order ?? 0) - (b.round_order ?? 0) || a.position - b.position);
 
@@ -93,19 +120,34 @@ export async function autoScheduleLeague(tournamentId: string): Promise<AutoSche
     .map((key) => queuesByGroup.get(key))
     .filter((q): q is LeagueMatchInput[] => !!q);
 
-  const { assignments, unscheduledCount } = buildLeagueSchedule(
+  // Cuántos partidos ya jugó cada pareja: las que todavía no jugaron tienen prioridad.
+  const playedCounts: Record<string, number> = {};
+  for (const m of lockedMatches) {
+    if (!m.winner_id) continue;
+    for (const t of [m.team1_id, m.team2_id]) if (t) playedCounts[t] = (playedCounts[t] ?? 0) + 1;
+  }
+
+  const { assignments, unscheduledCount } = optimizeLeagueSchedule(
     groupQueues,
     slots,
     Math.max(15, tournament.default_match_minutes ?? 60),
     tournament.start_date,
-    (locked ?? []).filter((m): m is typeof m & { court_id: string; scheduled_at: string } => !!m.court_id && !!m.scheduled_at),
+    lockedMatches.filter((m): m is typeof m & { court_id: string; scheduled_at: string } => !!m.court_id && !!m.scheduled_at),
     blackouts ?? [],
     availability ?? [],
     unavailability ?? [],
+    // Nunca agendar en el pasado: si se vuelve a repartir con el torneo ya empezado, arranca desde hoy.
+    { playedCounts, earliestDate },
   );
 
-  for (const a of assignments) {
-    await supabase.from("matches").update({ court_id: a.courtId, scheduled_at: a.scheduledAt }).eq("id", a.matchId);
+  // De a tandas para no mandar cientos de pedidos de a uno.
+  const BATCH = 10;
+  for (let i = 0; i < assignments.length; i += BATCH) {
+    await Promise.all(
+      assignments.slice(i, i + BATCH).map((a) =>
+        supabase.from("matches").update({ court_id: a.courtId, scheduled_at: a.scheduledAt }).eq("id", a.matchId),
+      ),
+    );
   }
 
   return { scheduled: assignments.length, unscheduled: unscheduledCount };

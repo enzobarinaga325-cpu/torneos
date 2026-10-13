@@ -14,6 +14,7 @@ export function createSupabaseMock(fixtures: Fixtures) {
   function makeQuery(table: string) {
     const filters: Record<string, unknown> = {};
     let singleMode = false;
+    let orMode = false;
     let pendingWrite: { type: "insert" | "update" | "delete"; payload: unknown } | null = null;
 
     // Tipado laxo a propósito: esto imita apenas la porción de la interfaz fluida de
@@ -25,6 +26,8 @@ export function createSupabaseMock(fixtures: Fixtures) {
       in: (col: string, vals: unknown) => { filters[col] = vals; return query; },
       not: () => query,
       is: () => query,
+      // `.or(...)` marca la consulta como la variante "bloqueados" (jugados o movidos a mano): se sirve desde `<tabla>:or`.
+      or: () => { orMode = true; return query; },
       order: () => query,
       maybeSingle: () => { singleMode = true; return query; },
       update: (payload: unknown) => { pendingWrite = { type: "update", payload }; return query; },
@@ -36,7 +39,7 @@ export function createSupabaseMock(fixtures: Fixtures) {
           resolve({ data: null, error: null });
           return;
         }
-        const rows = fixtures[table] ?? [];
+        const rows = (orMode && fixtures[`${table}:or`]) || fixtures[table] || [];
         resolve({ data: singleMode ? (rows[0] ?? null) : rows, error: null });
       },
     };
