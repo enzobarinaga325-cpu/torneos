@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { prepareClonedDocument } from "./html2canvasClone";
 
 export interface StorySize {
   width: number;
@@ -17,6 +18,9 @@ export interface StorySize {
  */
 function cloneOffscreen(el: HTMLElement, widthPx: number, extraTransform?: string): { clone: HTMLElement; cleanup: () => void } {
   const clone = el.cloneNode(true) as HTMLElement;
+  // La tipografía del cartel (Manrope) está puesta en un ancestro que no viaja con el clon --
+  // sin esto la imagen salía con la fuente del sistema en vez de la del diseño.
+  clone.style.fontFamily = getComputedStyle(el).fontFamily;
   clone.style.width = `${widthPx}px`;
   clone.style.maxWidth = "none";
   if (extraTransform) {
@@ -90,7 +94,8 @@ export function useStoryDownload(fileName: string, size: StorySize) {
     // diseño real sea cual sea el tamaño en pantalla.
     const cardWidth = headerEl.clientWidth;
     const scale = size.width / cardWidth;
-    const captureOpts = { backgroundColor: null, scale, useCORS: true } as const;
+    // `onclone`: ver html2canvasClone.ts -- sin esto, en el celular la captura salía sin CSS.
+    const captureOpts = { backgroundColor: null, scale, useCORS: true, onclone: prepareClonedDocument } as const;
 
     const header = cloneOffscreen(headerEl, cardWidth);
     await nextFrame();

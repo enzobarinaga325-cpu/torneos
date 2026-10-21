@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { prepareClonedDocument } from "./html2canvasClone";
 
 const MAX_OUTPUT_HEIGHT = 4000; // límite de canvas seguro para navegadores de celular (sobre todo iOS)
 
@@ -36,7 +37,7 @@ export function useDownloadImage(fileName: string) {
       // podía superar. Se limita la escala para que el canvas final nunca pase de cierto
       // alto, sea cual sea el dispositivo.
       const scale = Math.min(2, MAX_OUTPUT_HEIGHT / node.scrollHeight) || 1;
-      const canvas = await html2canvas(node, { backgroundColor: "#ffffff", scale, useCORS: true });
+      const canvas = await html2canvas(node, { backgroundColor: "#ffffff", scale, useCORS: true, onclone: prepareClonedDocument });
 
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!blob) return;
