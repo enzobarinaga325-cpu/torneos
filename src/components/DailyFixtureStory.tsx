@@ -3,9 +3,10 @@ import { ArrowLeftRight, Ban, Download, ImagePlus, Loader2, Pencil } from "lucid
 import type { Category, Court, Match, Team } from "@/lib/types";
 import { useStoryDownload } from "@/lib/useStoryDownload";
 import { useDesignScale } from "@/lib/useDesignScale";
-import type { TeamAvailability, TeamUnavailability } from "@/lib/types";
+import type { LeagueSlot, ScheduleBlackout, TeamAvailability, TeamUnavailability } from "@/lib/types";
 import { localDateStr, toLocalDatetimeInput } from "@/lib/format";
-import { matchWinner } from "@/lib/tournament-logic";
+import { isBlackedOut, matchWinner } from "@/lib/tournament-logic";
+import { isWithinLeagueSlot } from "@/lib/slot-validation";
 import { swapMatchOptions, swapOptions } from "@/lib/swap-opponent";
 import type { SwapMatchOption, SwapOption } from "@/lib/swap-opponent";
 import { Button, Select } from "./ui";
@@ -386,6 +387,8 @@ export function DailyFixtureStory({
   teamUnavailability,
   matchDurationMinutes,
   showDownload = true,
+  leagueSlots,
+  blackouts,
 }: {
   tournamentName: string;
   date: string;
@@ -403,6 +406,12 @@ export function DailyFixtureStory({
   teamUnavailability?: Pick<TeamUnavailability, "team_id" | "start_date" | "end_date">[];
   matchDurationMinutes?: number;
   showDownload?: boolean;
+  /** Horarios semanales de la liga por cancha. Si se pasan, un hueco sin partido sólo dice
+   * "Libre" cuando ese horario es de la liga; si no, dice "Turno fijo" (la cancha está
+   * ocupada por un turno fijo del complejo). Sin esto, todo hueco dice "Libre". */
+  leagueSlots?: Pick<LeagueSlot, "court_id" | "dia_semana" | "hora_inicio" | "hora_fin">[];
+  /** Turnos cancelados (ver blackouts.ts) -- tampoco están libres para el torneo. */
+  blackouts?: Pick<ScheduleBlackout, "date" | "court_id" | "hora_inicio">[];
 }) {
   const { headerRef, contentRef, footerRef, download, downloading } = useStoryDownload(fileName, {
     width: 1080,
@@ -424,6 +433,12 @@ export function DailyFixtureStory({
   const byCourtAndTime = new Map(dayMatches.map((m) => [`${m.court_id}|${m.scheduled_at}`, m]));
 
   const gridTemplateColumns = `${HORA_COL_WIDTH}px repeat(${courts.length}, 1fr)`;
+
+  function emptyCellLabel(courtId: string, iso: string): string {
+    if (!leagueSlots) return "Libre";
+    if (blackouts && isBlackedOut(blackouts, courtId, iso)) return "Turno fijo";
+    return isWithinLeagueSlot(iso, courtId, leagueSlots, matchDurationMinutes ?? 60) ? "Libre" : "Turno fijo";
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -512,7 +527,7 @@ export function DailyFixtureStory({
                               categoriesById={categoriesById}
                             />
                           ) : (
-                            <p className="pl-[13px] text-[10px] font-medium" style={{ color: "#96A2BC" }}>Libre</p>
+                            <p className="pl-[13px] text-[10px] font-medium" style={{ color: "#96A2BC" }}>{emptyCellLabel(court.id, iso)}</p>
                           )}
                         </div>
                       );

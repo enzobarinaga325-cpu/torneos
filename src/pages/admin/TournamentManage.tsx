@@ -949,6 +949,8 @@ export function TournamentManage() {
             teamAvailability={teamAvailability}
             teamUnavailability={teamUnavailability}
             matchDurationMinutes={Math.max(15, tournament?.default_match_minutes ?? 60)}
+            leagueSlots={isLiga ? leagueSlots : undefined}
+            blackouts={blackouts}
           />
         </Card>
       )}

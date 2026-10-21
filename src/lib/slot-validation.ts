@@ -43,6 +43,34 @@ function nearestOptionsMessage(candidateMinutes: number[], targetMinutes: number
 }
 
 /**
+ * true si un partido de `durationMinutes` que arranca en `isoDatetime` entra completo dentro
+ * de la franja de liga de esa cancha ese día (o de la franja del día anterior, si cruza la
+ * medianoche). A diferencia de `validateLeagueSlotTime` no exige que caiga justo en un turno
+ * de la grilla: sirve para saber si ese hueco de la cancha es de la liga (y por lo tanto
+ * está realmente libre) o si la cancha está ocupada con un turno fijo del complejo.
+ */
+export function isWithinLeagueSlot(
+  isoDatetime: string,
+  courtId: string,
+  slots: Pick<LeagueSlot, "court_id" | "dia_semana" | "hora_inicio" | "hora_fin">[],
+  durationMinutes: number,
+): boolean {
+  const dt = new Date(isoDatetime);
+  const minutes = dt.getHours() * 60 + dt.getMinutes();
+  const dow = dt.getDay();
+  return slots.some((s) => {
+    if (s.court_id !== courtId) return false;
+    const start = timeToMinutes(s.hora_inicio);
+    let end = timeToMinutes(s.hora_fin);
+    if (end <= start) end += 24 * 60;
+    if (s.dia_semana === dow && minutes >= start && minutes + durationMinutes <= end) return true;
+    // franja del día anterior que cruza la medianoche (ej. martes 20:30 a 00:30 -> miércoles 00:00)
+    const shifted = minutes + 24 * 60;
+    return (s.dia_semana + 1) % 7 === dow && shifted >= start && shifted + durationMinutes <= end;
+  });
+}
+
+/**
  * Valida que `isoDatetime` caiga justo en un turno válido de la cancha `courtId` para una
  * liga, según las franjas semanales cargadas ("Horarios de la liga") y la duración de
  * partido configurada. Si la franja del día anterior cruza la medianoche, sus turnos de

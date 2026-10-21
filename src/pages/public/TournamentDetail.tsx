@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { Category, Court, Match, Team, Tournament, Zone } from "@/lib/types";
+import type { Category, Court, LeagueSlot, Match, ScheduleBlackout, Team, Tournament, Zone } from "@/lib/types";
 import { formatDateRange, localDateStr, todayStr } from "@/lib/format";
 import { matchWinner } from "@/lib/tournament-logic";
 import { useSiteBackground } from "@/lib/useSiteBackground";
@@ -37,6 +37,8 @@ export function TournamentDetail() {
   const [allTeams, setAllTeams] = useState<Team[]>([]);
   const [allMatches, setAllMatches] = useState<Match[]>([]);
   const [selectedDay, setSelectedDay] = useState<string>("");
+  const [leagueSlots, setLeagueSlots] = useState<LeagueSlot[]>([]);
+  const [blackouts, setBlackouts] = useState<ScheduleBlackout[]>([]);
   const backgroundStyle = useSiteBackground();
 
   useEffect(() => {
@@ -50,12 +52,16 @@ export function TournamentDetail() {
       .then(async ({ data: t }) => {
         setTournament(t ?? null);
         if (!t) return;
-        const [{ data: cats }, { data: co }] = await Promise.all([
+        const [{ data: cats }, { data: co }, { data: slots }, { data: bl }] = await Promise.all([
           supabase.from("categories").select("*").eq("tournament_id", t.id).order("created_at"),
           supabase.from("courts").select("*").eq("tournament_id", t.id).order("name"),
+          supabase.from("horarios_liga").select("*").eq("tournament_id", t.id),
+          supabase.from("schedule_blackouts").select("*").eq("tournament_id", t.id),
         ]);
         setCategories(cats ?? []);
         setCourts(co ?? []);
+        setLeagueSlots(slots ?? []);
+        setBlackouts(bl ?? []);
         if (cats && cats.length > 0) setActiveCategory(cats[0].id);
 
         if (cats && cats.length > 0) {
@@ -148,6 +154,9 @@ export function TournamentDetail() {
             categoriesById={categoriesById}
             fileName={`grilla-${tournament.slug}-${selectedDay}`}
             showDownload={false}
+            leagueSlots={isLiga ? leagueSlots : undefined}
+            blackouts={blackouts}
+            matchDurationMinutes={Math.max(15, tournament.default_match_minutes ?? 60)}
           />
         </div>
       )}
