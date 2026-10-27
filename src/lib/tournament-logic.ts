@@ -64,11 +64,20 @@ export function matchWinner(m: Match): 1 | 2 | null {
   return null;
 }
 
-/** Tabla de posiciones de una zona: partidos ganados, luego diferencia de sets y de games. */
-export function computeStandings(teamIds: string[], matches: Match[]): ZoneStanding[] {
+/** Puntos de liga por partido. */
+export const POINTS_WIN = 2;
+export const POINTS_LOSS_IN_3_SETS = 1;
+export const POINTS_LOSS_IN_2_SETS = 0;
+
+/**
+ * Tabla de posiciones de una zona. Por defecto ordena por partidos ganados, luego diferencia de
+ * sets y de games. Con `byPoints` (ligas) ordena primero por puntos: ganar suma 2, perder en 3
+ * sets suma 1 (se le premia haber ganado un set) y perder en 2 sets suma 0.
+ */
+export function computeStandings(teamIds: string[], matches: Match[], opts: { byPoints?: boolean } = {}): ZoneStanding[] {
   const table = new Map<string, ZoneStanding>();
   for (const id of teamIds) {
-    table.set(id, { team_id: id, played: 0, won: 0, lost: 0, sets_won: 0, sets_lost: 0, sets_diff: 0, games_won: 0, games_lost: 0, games_diff: 0 });
+    table.set(id, { team_id: id, played: 0, won: 0, lost: 0, sets_won: 0, sets_lost: 0, sets_diff: 0, games_won: 0, games_lost: 0, games_diff: 0, points: 0 });
   }
 
   for (const m of matches) {
@@ -91,7 +100,11 @@ export function computeStandings(teamIds: string[], matches: Match[]): ZoneStand
     t2.sets_won += setsFor2; t2.sets_lost += setsFor1;
     t1.games_won += gamesFor1; t1.games_lost += gamesFor2;
     t2.games_won += gamesFor2; t2.games_lost += gamesFor1;
-    if (winner === 1) { t1.won++; t2.lost++; } else { t2.won++; t1.lost++; }
+    // Si el que perdió se llevó un set, el partido se definió en 3 sets.
+    const loserSets = winner === 1 ? setsFor2 : setsFor1;
+    const loserPoints = loserSets > 0 ? POINTS_LOSS_IN_3_SETS : POINTS_LOSS_IN_2_SETS;
+    if (winner === 1) { t1.won++; t2.lost++; t1.points += POINTS_WIN; t2.points += loserPoints; }
+    else { t2.won++; t1.lost++; t2.points += POINTS_WIN; t1.points += loserPoints; }
   }
   for (const t of table.values()) {
     t.sets_diff = t.sets_won - t.sets_lost;
@@ -99,7 +112,9 @@ export function computeStandings(teamIds: string[], matches: Match[]): ZoneStand
   }
 
   return [...table.values()].sort(
-    (a, b) => b.won - a.won || b.sets_diff - a.sets_diff || b.games_diff - a.games_diff,
+    (a, b) =>
+      (opts.byPoints ? b.points - a.points : 0) ||
+      b.won - a.won || b.sets_diff - a.sets_diff || b.games_diff - a.games_diff,
   );
 }
 

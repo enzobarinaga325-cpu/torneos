@@ -172,6 +172,38 @@ describe("computeStandings", () => {
     expect(table.find((t) => t.team_id === "C")!.won).toBe(0);
   });
 
+  it("puntos de liga: ganar 2, perder en 3 sets 1, perder en 2 sets 0", () => {
+    const matches = [
+      // A le gana a B en 2 sets: A 2, B 0
+      makeMatch({ id: "m1", team1_id: "A", team2_id: "B", set1_team1: 6, set1_team2: 0, set2_team1: 6, set2_team2: 0 }),
+      // C le gana a A en 3 sets: C 2, A 1
+      makeMatch({ id: "m2", team1_id: "A", team2_id: "C", set1_team1: 6, set1_team2: 4, set2_team1: 3, set2_team2: 6, set3_team1: 4, set3_team2: 6 }),
+    ];
+    const table = computeStandings(["A", "B", "C"], matches, { byPoints: true });
+    const pts = Object.fromEntries(table.map((t) => [t.team_id, t.points]));
+    expect(pts).toEqual({ A: 3, B: 0, C: 2 });
+    expect(table.map((t) => t.team_id)).toEqual(["A", "C", "B"]);
+  });
+
+  it("con puntos, perder en 3 sets puede dejar arriba a quien ganó menos partidos", () => {
+    const matches = [
+      // X gana 1 en 2 sets y pierde 2 en 3 sets: 2 + 1 + 1 = 4 puntos
+      makeMatch({ id: "a", team1_id: "X", team2_id: "Z1", set1_team1: 6, set1_team2: 0, set2_team1: 6, set2_team2: 0 }),
+      makeMatch({ id: "b", team1_id: "X", team2_id: "Z2", set1_team1: 6, set1_team2: 4, set2_team1: 3, set2_team2: 6, set3_team1: 4, set3_team2: 6 }),
+      makeMatch({ id: "c", team1_id: "X", team2_id: "Z3", set1_team1: 6, set1_team2: 4, set2_team1: 3, set2_team2: 6, set3_team1: 4, set3_team2: 6 }),
+      // Y gana 1 y pierde 2, todos en 2 sets: 2 + 0 + 0 = 2 puntos
+      makeMatch({ id: "d", team1_id: "Y", team2_id: "Z1", set1_team1: 6, set1_team2: 0, set2_team1: 6, set2_team2: 0 }),
+      makeMatch({ id: "e", team1_id: "Y", team2_id: "Z2", set1_team1: 0, set1_team2: 6, set2_team1: 0, set2_team2: 6 }),
+      makeMatch({ id: "f", team1_id: "Y", team2_id: "Z3", set1_team1: 0, set1_team2: 6, set2_team1: 0, set2_team2: 6 }),
+    ];
+    const table = computeStandings(["X", "Y", "Z1", "Z2", "Z3"], matches, { byPoints: true });
+    const x = table.find((t) => t.team_id === "X")!;
+    const y = table.find((t) => t.team_id === "Y")!;
+    expect(x.points).toBe(4);
+    expect(y.points).toBe(2);
+    expect(table.indexOf(x)).toBeLessThan(table.indexOf(y));
+  });
+
   it("ignora partidos sin resultado cargado", () => {
     const matches = [makeMatch({ team1_id: "A", team2_id: "B" })];
     const table = computeStandings(["A", "B"], matches);

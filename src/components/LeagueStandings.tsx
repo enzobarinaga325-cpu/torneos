@@ -6,9 +6,8 @@ import { Button } from "./ui";
 
 /**
  * Tabla de posiciones de una liga (todos los equipos de la categoría juntos, no hay
- * zonas). "Puntos" se calcula como 2 por partido ganado, 0 por perdido — el criterio más
- * común en ligas amateur; si tu liga usa otra puntuación, es el único número que haría
- * falta ajustar acá.
+ * zonas). Puntos: ganar suma 2; perder en 3 sets suma 1; perder en 2 sets suma 0 (ver
+ * `computeStandings`). La tabla se ordena por puntos.
  */
 export function LeagueStandings({
   teamIds, matches, teamsById, fileName, showDownload = true,
@@ -20,7 +19,7 @@ export function LeagueStandings({
   showDownload?: boolean;
 }) {
   const { ref, download, downloading } = useDownloadImage(fileName);
-  const standings = computeStandings(teamIds, matches);
+  const standings = computeStandings(teamIds, matches, { byPoints: true });
 
   return (
     <div className="flex flex-col gap-3">
@@ -66,7 +65,7 @@ export function LeagueStandings({
                 <td className="whitespace-nowrap px-1 text-center">
                   <span className="text-emerald-600">{s.games_won}</span>-<span className="text-red-500">{s.games_lost}</span>
                 </td>
-                <td className="px-1 text-center font-semibold text-emerald-700">{s.won * 2}</td>
+                <td className="px-1 text-center font-semibold text-emerald-700">{s.points}</td>
               </tr>
             ))}
             {standings.length === 0 && (

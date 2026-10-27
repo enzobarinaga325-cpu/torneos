@@ -142,4 +142,6 @@ export type ZoneStanding = {
   games_won: number;
   games_lost: number;
   games_diff: number;
+  /** Puntos de liga: ganar 2; perder en 3 sets 1; perder en 2 sets 0. */
+  points: number;
 };
