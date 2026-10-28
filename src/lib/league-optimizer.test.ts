@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { optimizeLeagueSchedule } from "./league-optimizer";
 import { buildLeagueSchedule, roundRobinJourneys, type CourtSlot, type LeagueMatchInput } from "./league-logic";
 import { localDateStr } from "./format";
+import type { ExistingSchedule } from "./tournament-logic";
 
 // 2026-09-28 es lunes. Dos canchas, lunes a jueves de 20 a 22 (2 turnos de 60 min por cancha y día).
 const START = "2026-09-28";
@@ -58,7 +59,8 @@ describe("optimizeLeagueSchedule", () => {
   it("deja un calendario más parejo que el reparto anterior (menor suma de huecos al cuadrado y menor peor hueco)", () => {
     const queues = [zone("A", 8), zone("B", 8), zone("C", 7)];
     const base = buildLeagueSchedule(queues, SLOTS, DURATION, START);
-    const opt = optimizeLeagueSchedule(queues, SLOTS, DURATION, START, [], [], [], [], FAST);
+    // Sin "atrasadas primero" (que a propósito hace esperar a las que van adelante).
+    const opt = optimizeLeagueSchedule(queues, SLOTS, DURATION, START, [], [], [], [], { ...FAST, catchUp: false });
     const dBase = daysByTeam(queues, base);
     const dOpt = daysByTeam(queues, opt);
     expect(sumSq(dOpt)).toBeLessThan(sumSq(dBase));
@@ -126,6 +128,25 @@ describe("optimizeLeagueSchedule", () => {
     const a = optimizeLeagueSchedule(queues, SLOTS, DURATION, START, [], [], [], [], FAST);
     const b = optimizeLeagueSchedule(queues, SLOTS, DURATION, START, [], [], [], [], FAST);
     expect(b).toEqual(a);
+  });
+
+  it("atrasadas primero: la pareja que lleva menos partidos juega antes que las que van adelante", () => {
+    // B, C y D ya jugaron 2 partidos (contra parejas de afuera); A todavía no jugó ninguno.
+    const played: ExistingSchedule[] = ["B", "C", "D"].flatMap((t, i) => [
+      { court_id: "c1", scheduled_at: new Date(2026, 8, 28 + i, 20).toISOString(), team1_id: t, team2_id: `X${i}` },
+      { court_id: "c2", scheduled_at: new Date(2026, 9, 5 + i, 20).toISOString(), team1_id: t, team2_id: `Y${i}` },
+    ]);
+    const queues = [roundRobinJourneys(["A", "B", "C", "D"], false).flat().map(([a, b], i) => ({ id: `m${i}`, team1_id: a, team2_id: b }))];
+    const res = optimizeLeagueSchedule(queues, SLOTS, DURATION, START, played, [], [], [], {
+      ...FAST, earliestDate: "2026-10-12", playedCounts: { B: 2, C: 2, D: 2 },
+    });
+    expect(res.unscheduledCount).toBe(0);
+    const byId = new Map(queues[0].map((m) => [m.id, m]));
+    const day = (iso: string) => localDateStr(iso);
+    const withA = res.assignments.filter((a) => [byId.get(a.matchId)!.team1_id, byId.get(a.matchId)!.team2_id].includes("A")).map((a) => day(a.scheduledAt)).sort();
+    const withoutA = res.assignments.filter((a) => ![byId.get(a.matchId)!.team1_id, byId.get(a.matchId)!.team2_id].includes("A")).map((a) => day(a.scheduledAt));
+    // Nadie juega un partido que no sea contra A antes de que A haya jugado al menos 2.
+    for (const d of withoutA) expect(d >= withA[1]).toBe(true);
   });
 
   it("sin partidos o sin franjas devuelve vacío", () => {

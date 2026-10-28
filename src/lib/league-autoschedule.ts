@@ -11,9 +11,11 @@ import type { AutoScheduleResult } from "./autoschedule";
  * (`auto_scheduled = true`) — no solo los recién creados — para poder repartir bien las
  * categorías (y, dentro de cada una, sus zonas si tiene) cada vez que se genera o regenera
  * el fixture de una de ellas; nunca toca un partido ya jugado ni uno que el admin movió a
- * mano (eso queda con `auto_scheduled = false`). El reparto busca que todas las parejas
- * debuten lo antes posible y después jueguen lo más seguido y parejo posible, dentro de los
- * horarios y días que tiene disponible cada una (ver `optimizeLeagueSchedule`). Requiere que haya al menos una franja
+ * mano (eso queda con `auto_scheduled = false`). El reparto pone primero a las parejas que van
+ * atrasadas (hasta que alcanzan a las que más partidos llevan de su zona) y busca que todas
+ * jueguen lo más seguido y parejo posible, dentro de los horarios y días que tiene disponible
+ * cada una (ver `optimizeLeagueSchedule`). También se usa al suspender un día o un turno de
+ * liga (ver `blackouts.ts`). Requiere que haya al menos una franja
  * horaria semanal cargada ("horarios_liga") y una fecha de inicio en el torneo.
  */
 export async function autoScheduleLeague(tournamentId: string): Promise<AutoScheduleResult> {
@@ -137,7 +139,8 @@ export async function autoScheduleLeague(tournamentId: string): Promise<AutoSche
     availability ?? [],
     unavailability ?? [],
     // Nunca agendar en el pasado: si se vuelve a repartir con el torneo ya empezado, arranca desde hoy.
-    { playedCounts, earliestDate },
+    // Con "atrasadas primero" el cálculo es más pesado: más intentos y más tiempo (unos segundos).
+    { playedCounts, earliestDate, iterations: 600_000, maxMillis: 20_000 },
   );
 
   // De a tandas para no mandar cientos de pedidos de a uno.

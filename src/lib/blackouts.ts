@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import { localDateStr, todayStr } from "./format";
 import { repairMatches } from "./repair-schedule";
+import { autoScheduleLeague } from "./league-autoschedule";
 import { firstRescheduleDay } from "./visible-days";
 import type { ScheduleBlackout } from "./types";
 
@@ -68,8 +69,29 @@ async function matchDaysExcluding(tournamentId: string, excludeIds: string[]): P
 /** Reacomoda lo suspendido recién DESPUÉS de los próximos 2 días con partidos (los que el
  *  público ve): esos días ya están armados y no se tocan, ni para mover partidos ni para
  *  llenar el hueco. Se cuenta sin los partidos que se están moviendo, así si lo suspendido
- *  era uno de esos 2 días, el que lo reemplaza en la vista también queda protegido. */
+ *  era uno de esos 2 días, el que lo reemplaza en la vista también queda protegido.
+ *
+ *  En LIGA no se reacomoda solo lo suspendido: se vuelve a repartir todo lo que viene después
+ *  de esos días con prioridad para las parejas atrasadas (`autoScheduleLeague`), así una
+ *  suspensión no deja a nadie más atrasado de lo necesario. Lo jugado y lo movido a mano no se
+ *  toca (salvo los partidos suspendidos, que sí se reubican). En torneos por zonas/cuadro se
+ *  sigue reacomodando solo lo suspendido. */
 async function rescheduleAfterVisibleDays(tournamentId: string, affectedIds: string[]) {
+  if (affectedIds.length > 0) {
+    const { data: affected } = await supabase.from("matches").select("id, stage").in("id", affectedIds);
+    const leagueIds = (affected ?? []).filter((m) => affectedIds.includes(m.id) && m.stage === "liga").map((m) => m.id);
+    const otherIds = affectedIds.filter((x) => !leagueIds.includes(x));
+    if (leagueIds.length > 0) {
+      // Los suspendidos quedan sin horario y como "automáticos" para que el reparto los ubique.
+      await supabase.from("matches").update({ court_id: null, scheduled_at: null, auto_scheduled: true }).in("id", leagueIds);
+      const days = await matchDaysExcluding(tournamentId, otherIds);
+      const other = otherIds.length > 0
+        ? await repairMatches(tournamentId, otherIds, { notBefore: firstRescheduleDay(days, todayStr()) })
+        : { repaired: 0, unscheduled: 0 };
+      const league = await autoScheduleLeague(tournamentId);
+      return { repaired: other.repaired + league.scheduled, unscheduled: other.unscheduled + league.unscheduled };
+    }
+  }
   const days = await matchDaysExcluding(tournamentId, affectedIds);
   return repairMatches(tournamentId, affectedIds, { notBefore: firstRescheduleDay(days, todayStr()) });
 }

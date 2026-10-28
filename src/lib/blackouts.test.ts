@@ -9,31 +9,33 @@ vi.mock("./supabase", () => ({
   },
 }));
 
+// En liga, suspender vuelve a repartir todo lo que viene con "atrasadas primero"
+// (`autoScheduleLeague`, que tiene sus propios tests, incluido no tocar los días que se ven).
+// Acá solo se verifica que se le pase la posta bien.
+const autoScheduleLeague = vi.fn(async (_tournamentId: string) => ({ scheduled: 3, unscheduled: 0 }));
+vi.mock("./league-autoschedule", () => ({ autoScheduleLeague: (id: string) => autoScheduleLeague(id) }));
+
 const { cancelDay, cancelTurn } = await import("./blackouts");
 
 const T = "t1";
 const COURT = "c1";
 
-// Liga: lunes y miércoles, un solo turno por día (19hs), una sola cancha.
 const SLOTS = [
   { court_id: COURT, dia_semana: 1, hora_inicio: "19:00:00", hora_fin: "20:00:00" },
   { court_id: COURT, dia_semana: 3, hora_inicio: "19:00:00", hora_fin: "20:00:00" },
 ];
 
-function match(id: string, scheduledAt: string, t1: string, t2: string) {
-  return { id, category_id: "cat1", stage: "liga", court_id: COURT, scheduled_at: scheduledAt, team1_id: t1, team2_id: t2, winner_id: null, auto_scheduled: true };
+function match(id: string, scheduledAt: string, t1: string, t2: string, stage = "liga") {
+  return { id, category_id: "cat1", stage, court_id: COURT, scheduled_at: scheduledAt, team1_id: t1, team2_id: t2, winner_id: null, auto_scheduled: false };
 }
 
-// Días con partidos: lunes 5, lunes 12 y miércoles 14. El miércoles 7 tiene el turno LIBRE (sin
-// partido): es el lugar más cercano disponible, justo adentro de los días que no hay que tocar --
-// si el reacomodo no estuviera protegido, los partidos suspendidos irían a parar ahí.
 const MATCHES = [
   match("m1", "2026-10-05T22:00:00.000Z", "A", "B"), // lunes 5 (hoy)
   match("m3", "2026-10-12T22:00:00.000Z", "E", "F"), // lunes 12
   match("m4", "2026-10-14T22:00:00.000Z", "G", "H"), // miércoles 14
 ];
 
-function fixtures(blackouts: Fixtures["x"] = []): Fixtures {
+function fixtures(blackouts: Fixtures["x"] = [], matches = MATCHES): Fixtures {
   return {
     tournaments: [{ default_match_minutes: 60, start_date: "2026-10-05" }],
     courts: [{ id: COURT }],
@@ -43,48 +45,65 @@ function fixtures(blackouts: Fixtures["x"] = []): Fixtures {
     categories: [{ id: "cat1" }],
     team_availability: [],
     team_unavailability: [],
-    matches: MATCHES,
+    matches,
   };
 }
 
-const writesFor = (id: string) => current.writes.filter((w) => w.table === "matches" && (w.filters as { id?: string }).id === id);
+/** Escrituras a `matches` que alcanzan al partido `id` (por `.eq("id", ...)` o `.in("id", [...])`). */
+const writesFor = (id: string) =>
+  current.writes.filter((w) => {
+    if (w.table !== "matches") return false;
+    const f = (w.filters as { id?: string | string[] }).id;
+    return Array.isArray(f) ? f.includes(id) : f === id;
+  });
 
 beforeEach(() => {
   vi.useFakeTimers({ now: new Date(2026, 9, 5, 12, 0), toFake: ["Date"] }); // hoy: lunes 5 de octubre
+  autoScheduleLeague.mockClear();
 });
 afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("cancelDay / cancelTurn: reacomodan después de los próximos 2 días con partidos", () => {
-  it("cancelar HOY manda el partido después de los 2 días que se ven, y no toca los demás", async () => {
-    // Sin el partido de hoy, los próximos 2 días con partidos son el lunes 12 y el miércoles 14, así
-    // que el partido de hoy solo puede ir desde el 15: al lunes 19 (y NO al miércoles 7, que está libre).
+describe("cancelDay / cancelTurn en liga: se vuelve a repartir con prioridad a las atrasadas", () => {
+  it("cancelar HOY deja el partido suspendido sin horario (y automático) y reparte todo de nuevo", async () => {
     current = createSupabaseMock(fixtures([{ date: "2026-10-05", court_id: null, hora_inicio: null }]));
     const result = await cancelDay(T, "2026-10-05");
 
     expect(result).toEqual({ unscheduled: 0 });
-    expect((writesFor("m1")[0].payload as any).scheduled_at).toBe("2026-10-19T22:00:00.000Z");
-    expect(writesFor("m3")).toHaveLength(0); // lunes 12: lo que la gente ve, intacto
-    expect(writesFor("m4")).toHaveLength(0); // miércoles 14: ídem
+    const w = writesFor("m1");
+    expect(w).toHaveLength(1);
+    expect(w[0].payload).toEqual({ court_id: null, scheduled_at: null, auto_scheduled: true });
+    expect(writesFor("m3")).toHaveLength(0); // los demás no se tocan acá (los reparte autoScheduleLeague)
+    expect(writesFor("m4")).toHaveLength(0);
+    expect(autoScheduleLeague).toHaveBeenCalledWith(T);
   });
 
-  it("cancelar un día de más adelante no toca los 2 días que se ven", async () => {
-    // Se cancela el miércoles 14. Los 2 días que se ven son el lunes 5 y el lunes 12: no se tocan.
-    // El partido del 14 NO puede ir al miércoles 7 (libre, pero antes de esos días): va al lunes 19.
+  it("cancelar un día de más adelante solo libera los partidos de ese día", async () => {
     current = createSupabaseMock(fixtures([{ date: "2026-10-14", court_id: null, hora_inicio: null }]));
     await cancelDay(T, "2026-10-14");
 
-    expect((writesFor("m4")[0].payload as any).scheduled_at).toBe("2026-10-19T22:00:00.000Z");
+    expect(writesFor("m4")).toHaveLength(1);
     expect(writesFor("m1")).toHaveLength(0);
     expect(writesFor("m3")).toHaveLength(0);
+    expect(autoScheduleLeague).toHaveBeenCalledTimes(1);
   });
 
-  it("cancelar un turno de hoy tampoco cambia los 2 días que se ven", async () => {
+  it("cancelar un turno puntual también reparte con prioridad", async () => {
     current = createSupabaseMock(fixtures([{ date: "2026-10-05", court_id: COURT, hora_inicio: "19:00:00" }]));
     await cancelTurn(T, { court_id: COURT, scheduled_at: "2026-10-05T22:00:00.000Z" });
 
-    expect((writesFor("m1")[0].payload as any).scheduled_at).toBe("2026-10-19T22:00:00.000Z");
+    expect(writesFor("m1")).toHaveLength(1);
     expect(writesFor("m3")).toHaveLength(0);
+    expect(autoScheduleLeague).toHaveBeenCalledTimes(1);
+  });
+
+  it("en torneos por zonas (no liga) sigue reacomodando solo lo suspendido, sin repartir todo", async () => {
+    const zonas = [match("z1", "2026-10-05T22:00:00.000Z", "A", "B", "zona")];
+    current = createSupabaseMock(fixtures([{ date: "2026-10-05", court_id: null, hora_inicio: null }], zonas));
+    await cancelDay(T, "2026-10-05");
+
+    expect(autoScheduleLeague).not.toHaveBeenCalled();
+    expect(writesFor("z1").length).toBeGreaterThan(0);
   });
 });

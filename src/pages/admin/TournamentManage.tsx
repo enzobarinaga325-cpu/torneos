@@ -327,7 +327,7 @@ export function TournamentManage() {
     setPendingDanger({
       title: "Autocompletar horarios",
       description:
-        "Esto vuelve a repartir TODOS los partidos de liga que todavía no se jugaron y que nadie movió a mano (los que sí movió el admin no se tocan), buscando que todas las parejas debuten lo antes posible y jueguen lo más seguido posible según sus horarios y días disponibles. Si el torneo ya empezó, hoy y los próximos 2 días con partidos quedan como están (es lo que ve el público) y el resto se reparte después. Puede reubicar partidos que ya tenían un horario asignado. Puede tardar unos segundos.",
+        "Esto vuelve a repartir TODOS los partidos de liga que todavía no se jugaron y que nadie movió a mano (los que sí movió el admin no se tocan), poniendo primero a las parejas atrasadas hasta que alcancen a las que más partidos llevan de su zona, y buscando que todas jueguen lo más seguido posible según sus horarios y días disponibles. Si el torneo ya empezó, hoy y los próximos 2 días con partidos quedan como están (es lo que ve el público) y el resto se reparte después. Puede reubicar partidos que ya tenían un horario asignado. Puede tardar unos segundos.",
       confirmWord: "AGENDAR",
       run: runAutoScheduleLeague,
     });
@@ -532,7 +532,7 @@ export function TournamentManage() {
     setPendingDanger({
       title: `Cancelar el día ${selectedGridDay}`,
       description:
-        "Se cancela TODO ese día (todas las canchas) para siempre: nunca más se va a agendar ningún partido ahí. Los partidos que tenía agendados no se pierden: se reacomodan solos, pero recién después de hoy y los próximos 2 días con partidos (esos días no se tocan, para no cambiar lo que el público ya ve; los días sin partidos no cuentan).",
+        "Se cancela TODO ese día (todas las canchas) para siempre: nunca más se va a agendar ningún partido ahí. Los partidos que tenía agendados no se pierden: se reacomodan solos, pero recién después de hoy y los próximos 2 días con partidos (esos días no se tocan, para no cambiar lo que el público ya ve; los días sin partidos no cuentan). En ligas se vuelve a repartir todo lo que viene después con prioridad para las parejas atrasadas (lo movido a mano no se toca). Puede tardar unos segundos.",
       confirmWord: "CANCELAR",
       run: runCancelDay,
     });
@@ -551,9 +551,11 @@ export function TournamentManage() {
 
   /** Cancela un partido puntual (esa cancha, ese horario exacto) — el resto del día sigue. */
   async function handleCancelTurn(match: Match) {
-    if (!confirm("¿Cancelar este turno? El partido no se pierde: se va a reacomodar solo, pero recién después de hoy y los próximos 2 días con partidos (esos días no se tocan).")) return;
+    if (!confirm("¿Cancelar este turno? El partido no se pierde: se va a reacomodar solo, pero recién después de hoy y los próximos 2 días con partidos (esos días no se tocan). En ligas se vuelve a repartir lo que viene después con prioridad para las parejas atrasadas.")) return;
     setError(null);
+    setScheduling(true);
     const result = await cancelTurn(id!, match);
+    setScheduling(false);
     reportCancelResult(result);
     load();
   }
