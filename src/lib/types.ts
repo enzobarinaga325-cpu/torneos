@@ -86,6 +86,8 @@ export type Category = {
   tournament_id: string;
   name: string;
   created_at: string;
+  /** Cuántas parejas pasan de cada zona; la tabla de posiciones las marca en verde. */
+  qualifiers_per_zone?: number | null;
 };
 
 export type Team = {

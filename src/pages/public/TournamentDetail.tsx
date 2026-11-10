@@ -194,6 +194,7 @@ export function TournamentDetail() {
                         teamsById={teamsById}
                         fileName={`posiciones-${tournament.slug}-${categories.find((c) => c.id === activeCategory)?.name ?? ""}${zone ? `-${zone.name}` : ""}`}
                         showDownload={false}
+                        qualifiers={categories.find((c) => c.id === activeCategory)?.qualifiers_per_zone}
                       />
                     </div>
                   </div>

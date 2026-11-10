@@ -39,6 +39,7 @@ export function CategoryManage() {
   const [teamsPerZone, setTeamsPerZone] = useState("4");
   const [qualifiersPerZone, setQualifiersPerZone] = useState("2");
   const [idaVuelta, setIdaVuelta] = useState(false);
+  const [pasanPorZona, setPasanPorZona] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -57,6 +58,7 @@ export function CategoryManage() {
     ]);
     setTournament(tour ?? null);
     setCategory(cat ?? null);
+    setPasanPorZona(cat?.qualifiers_per_zone ? String(cat.qualifiers_per_zone) : "");
     setTeams(t ?? []);
     setZones(z ?? []);
     setMatches((m as Match[]) ?? []);
@@ -80,6 +82,15 @@ export function CategoryManage() {
     const { error: err } = await promise;
     if (err) { setError(err.message); return false; }
     return true;
+  }
+
+  async function savePasanPorZona() {
+    const n = pasanPorZona.trim() === "" ? null : Math.max(1, Math.floor(Number(pasanPorZona)) || 1);
+    if (!category || n === (category.qualifiers_per_zone ?? null)) return;
+    if (await run(supabase.from("categories").update({ qualifiers_per_zone: n }).eq("id", category.id))) {
+      setCategory({ ...category, qualifiers_per_zone: n });
+      setPasanPorZona(n ? String(n) : "");
+    }
   }
 
   const teamsById = useMemo(() => Object.fromEntries(teams.map((t) => [t.id, t])), [teams]);
@@ -782,6 +793,16 @@ export function CategoryManage() {
               <input type="checkbox" checked={idaVuelta} onChange={(e) => setIdaVuelta(e.target.checked)} className="h-4 w-4 rounded border-zinc-300" />
               Ida y vuelta
             </label>
+            <label className="flex items-center gap-2 text-sm text-zinc-700">
+              Pasan por zona
+              <input
+                type="number" min={1} value={pasanPorZona} placeholder="-"
+                onChange={(e) => setPasanPorZona(e.target.value)}
+                onBlur={savePasanPorZona}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                className="h-8 w-16 rounded-md border border-zinc-300 px-2 text-sm"
+              />
+            </label>
             <Button onClick={generateLeagueFixture} disabled={busy || teams.length < 2}>
               {hasLigaMatches ? "Regenerar fixture de liga" : "Generar fixture de liga"}
             </Button>
@@ -799,7 +820,7 @@ export function CategoryManage() {
                   <h3 className="font-semibold">{zone.name}</h3>
                   <div>
                     <h4 className="mb-2 text-sm font-semibold text-zinc-700">Tabla de posiciones</h4>
-                    <LeagueStandings teamIds={zoneTeamIds} matches={zoneMatches2} teamsById={teamsById} fileName={`posiciones-${category.name}-${zone.name}`} />
+                    <LeagueStandings teamIds={zoneTeamIds} matches={zoneMatches2} teamsById={teamsById} fileName={`posiciones-${category.name}-${zone.name}`} qualifiers={category.qualifiers_per_zone} />
                   </div>
                   <div>
                     <h4 className="mb-2 text-sm font-semibold text-zinc-700">Fixture por jornada</h4>
@@ -826,7 +847,7 @@ export function CategoryManage() {
             <>
               <div>
                 <h3 className="mb-2 text-sm font-semibold text-zinc-700">Tabla de posiciones</h3>
-                <LeagueStandings teamIds={teams.map((t) => t.id)} matches={ligaMatches} teamsById={teamsById} fileName={`posiciones-${category.name}`} />
+                <LeagueStandings teamIds={teams.map((t) => t.id)} matches={ligaMatches} teamsById={teamsById} fileName={`posiciones-${category.name}`} qualifiers={category.qualifiers_per_zone} />
               </div>
 
               <div>
