@@ -6,7 +6,7 @@ import type { Category, Court, LeagueSlot, Match, ScheduleBlackout, Team, Tourna
 import { formatDateRange, localDateStr, todayStr } from "@/lib/format";
 import { matchWinner } from "@/lib/tournament-logic";
 import { useSiteBackground } from "@/lib/useSiteBackground";
-import { visibleUpcomingDays } from "@/lib/visible-days";
+import { publicUpcomingDays } from "@/lib/visible-days";
 import { FixtureBracket } from "@/components/FixtureBracket";
 import { ZonesView } from "@/components/ZonesView";
 import { LeagueStandings } from "@/components/LeagueStandings";
@@ -16,12 +16,11 @@ import { Select, Spinner } from "@/components/ui";
 /**
  * Para el público no se ve todo el calendario de una -- los días ya jugados quedan siempre
  * visibles (para poder consultar resultados viejos), pero de los que todavía no llegaron solo
- * se muestran hoy y los próximos 2 días CON PARTIDOS (ver VISIBLE_MATCH_DAYS). Al terminar un día se
- * destapa el siguiente; la ventana corre sola. Lo que está más adelante es lo que se puede
- * reacomodar sin que nadie haya visto nada.
+ * se muestran hoy y mañana (ver PUBLIC_DAYS_AHEAD): los partidos del lunes aparecen el domingo.
+ * La ventana corre sola cada día. Más adelante figura "Horario a confirmar".
  */
 function computeVisibleDays(availableDays: string[], todayIso: string): string[] {
-  const upcoming = new Set(visibleUpcomingDays(availableDays, todayIso));
+  const upcoming = new Set(publicUpcomingDays(availableDays, todayIso));
   return availableDays.filter((d) => d < todayIso || upcoming.has(d));
 }
 
@@ -75,7 +74,7 @@ export function TournamentDetail() {
           const allDates = [...new Set((allM ?? []).map((m) => localDateStr(m.scheduled_at as string)))].sort();
           const today = todayStr();
           const dates = computeVisibleDays(allDates, today);
-          const preferred = dates.find((d) => d >= today) ?? dates[0];
+          const preferred = dates.find((d) => d >= today) ?? dates[dates.length - 1];
           if (preferred) setSelectedDay(preferred);
         }
       });

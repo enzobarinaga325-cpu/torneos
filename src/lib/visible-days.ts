@@ -40,3 +40,17 @@ export function firstRescheduleDay(matchDates: Iterable<string>, today: string):
   const visible = visibleUpcomingDays(matchDates, today);
   return visible.length === 0 ? undefined : addDays(visible[visible.length - 1], 1);
 }
+
+/**
+ * Cuántos días de CALENDARIO después de hoy ve el público en la web (hoy + mañana). Es por
+ * calendario, no por días con partidos: un viernes se ve viernes y sábado (que no tiene
+ * partidos), así que los partidos del lunes aparecen recién el domingo. No cambia lo que se
+ * protege al suspender (eso sigue usando `visibleUpcomingDays` / `firstRescheduleDay`).
+ */
+export const PUBLIC_DAYS_AHEAD = 1;
+
+/** Días con partidos que el público ve por delante: de hoy hasta hoy + PUBLIC_DAYS_AHEAD. */
+export function publicUpcomingDays(matchDates: Iterable<string>, today: string): string[] {
+  const last = addDays(today, PUBLIC_DAYS_AHEAD);
+  return upcomingMatchDays(matchDates, today).filter((d) => d <= last);
+}
