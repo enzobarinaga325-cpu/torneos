@@ -408,7 +408,8 @@ export function DailyFixtureStory({
   showDownload?: boolean;
   /** Horarios semanales de la liga por cancha. Si se pasan, un hueco sin partido sólo dice
    * "Libre" cuando ese horario es de la liga; si no, dice "Turno fijo" (la cancha está
-   * ocupada por un turno fijo del complejo). Sin esto, todo hueco dice "Libre". */
+   * ocupada por un turno fijo del complejo). Sin esto, todo hueco dice "Libre". Un hueco
+   * que cae mientras se juega el partido anterior de esa cancha dice "Partido en curso". */
   leagueSlots?: Pick<LeagueSlot, "court_id" | "dia_semana" | "hora_inicio" | "hora_fin">[];
   /** Turnos cancelados (ver blackouts.ts) -- tampoco están libres para el torneo. */
   blackouts?: Pick<ScheduleBlackout, "date" | "court_id" | "hora_inicio">[];
@@ -435,6 +436,16 @@ export function DailyFixtureStory({
   const gridTemplateColumns = `${HORA_COL_WIDTH}px repeat(${courts.length}, 1fr)`;
 
   function emptyCellLabel(courtId: string, iso: string): string {
+    // Hueco "entre medio" (p. ej. cancha 2 a las 21:00 cuando en esa cancha se juega un
+    // partido de 20:30 a 21:30): la cancha está ocupada por el partido anterior, no libre.
+    const t = new Date(iso).getTime();
+    const durMs = (matchDurationMinutes ?? 60) * 60000;
+    const enCurso = dayMatches.some((m) => {
+      if (m.court_id !== courtId || !m.scheduled_at) return false;
+      const start = new Date(m.scheduled_at).getTime();
+      return start < t && t < start + durMs;
+    });
+    if (enCurso) return "Partido en curso";
     if (!leagueSlots) return "Libre";
     if (blackouts && isBlackedOut(blackouts, courtId, iso)) return "Turno fijo";
     return isWithinLeagueSlot(iso, courtId, leagueSlots, matchDurationMinutes ?? 60) ? "Libre" : "Turno fijo";
